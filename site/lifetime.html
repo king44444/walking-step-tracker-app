@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Lifetime Steps</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="app.css"/>
+</head><body class="min-h-screen">
+<header class="px-4 py-4 border-b border-white/10">
+  <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Lifetime Totals</h1>
+    <a class="text-sm text-blue-300" href="./">← Back to Dashboard</a>
+  </div>
+</header>
+<main class="max-w-6xl mx-auto px-4 py-6">
+  <div id="status" class="text-white/70 mb-3">Loading…</div>
+  <div class="card p-4">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" id="lifeTable">
+        <thead class="text-white/70">
+          <tr><th class="text-left py-2">#</th><th class="text-left py-2">Name</th>
+              <th class="text-left py-2">Tag</th><th class="text-left py-2">Sex</th>
+              <th class="text-right py-2">Age</th><th class="text-right py-2">Weeks</th>
+              <th class="text-right py-2">Total Steps</th></tr>
+        </thead><tbody></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<script>
+(async () => {
+  const base = location.pathname.replace(/site\\/lifetime\\.html$/, '');
+  const res = await fetch(base + 'api/lifetime.php', { cache: 'no-store' });
+  if (!res.ok) { document.getElementById('status').textContent = 'Failed to load'; return; }
+  const json = await res.json();
+  const rows = Array.isArray(json.lifetime) ? json.lifetime : [];
+  document.getElementById('status').textContent = `${rows.length} users`;
+  const tbody = document.querySelector('#lifeTable tbody');
+  tbody.innerHTML = rows.map((r,i)=>`
+    <tr class="border-t border-white/5">
+      <td class="py-2 pr-2">${i+1}</td>
+      <td class="py-2 pr-2">${(r.name||'').replace(/[&<>]/g,c=>({ '&':'&', '<':'<', '>':'>' }[c]))}</td>
+      <td class="py-2 pr-2 text-white/60">${(r.tag||'').replace(/[&<>]/g,c=>({ '&':'&', '<':'<', '>':'>' }[c]))}</td>
+      <td class="py-2 pr-2">${r.sex||''}</td>
+      <td class="py-2 text-right">${r.age??''}</td>
+      <td class="py-2 text-right">${r.weeks_with_data??0}</td>
+      <td class="py-2 text-right">${(r.total_steps||0).toLocaleString()}</td>
+    </tr>`).join('');
+})();
+</script>
+</body></html>

@@ -1,0 +1,18 @@
+# Environment
+.env
+.env.local
+api/.env.local
+
+# Local data and DBs
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+backup/
+
+# macOS and editor
+.DS_Store
+site/.DS_Store
+api/.DS_Store
+.vscode/

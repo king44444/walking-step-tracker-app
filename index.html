@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=/site/">
+  <title>Redirecting…</title>
+  <script>
+    (function() {
+      var target = "/site/";
+      if (location.pathname !== "/" && !location.pathname.startsWith("/site/")) {
+        // If served from a subpath, build absolute to /site/
+        target = "/site/";
+      }
+      try { window.location.replace(target); } catch (e) { window.location.href = target; }
+    })();
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0b1020; color: #e6ecff; display: grid; place-items: center; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    a { color: #9ecbff; }
+    .card { padding: 1rem 1.25rem; background: #0f1530; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    Redirecting to <a href="/site/">/site/</a> …
+  </div>
+</body>
+</html>

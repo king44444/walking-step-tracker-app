@@ -1,0 +1,36 @@
+{
+  "DAY_ORDER": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+  "GOALS": {
+    "DAILY_GOAL_10K": 10000,
+    "DAILY_GOAL_15K": 15000,
+    "DAILY_GOAL_2_5K": 2500,
+    "DAILY_GOAL_1K": 1000
+  },
+  "THRESHOLDS": {
+    "CHERYL_THRESHOLD": 20000,
+    "THIRTY_K_THRESHOLD": 30000
+  },
+  "AWARD_LIMIT": 1,
+  "DISPLAY_NAME_OVERRIDES": {
+    "Tutu": "Tutu"
+  },
+  "NUDGES": [
+    "Your shoes miss you.",
+    "Take a lap and report back.",
+    "Screenshot the counter tonight.",
+    "Walk-n-talk with the fam, then log it.",
+    "30 minutes. No debate."
+  ],
+  "LEVELS": {
+    "K": 1500,
+    "P": 1.6,
+    "LABEL": "Level"
+  },
+  "CUSTOM_AWARD_LABELS": {
+    "FIRST_30K": "Megan Award",
+    "FIRST_20K": "Cheryl Award",
+    "FIRST_15K": "Dean Award"
+  },
+  "LIFETIME_STEP_MILESTONES": [100000, 250000, 500000, 1000000],
+  "LIFETIME_ATTENDANCE_MILESTONES": [25, 50, 100]
+}
