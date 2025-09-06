@@ -509,17 +509,34 @@ if ($curWeek) {
         </form>
       </div>
 
-      <?php
-        $users = $pdo->query("SELECT id,name,sex,age,tag,is_active FROM users ORDER BY LOWER(name)")->fetchAll();
+        <?php
+        $users = $pdo->query("SELECT id,name,sex,age,tag,is_active,photo_path FROM users ORDER BY LOWER(name)")->fetchAll();
         if ($users):
       ?>
       <table id="usersTable">
-        <thead><tr><th style="width:28px"><input type="checkbox" id="chkAll"></th><th>Name</th><th>Sex</th><th>Age</th><th>Tag</th><th>Active</th><th></th></tr></thead>
+        <thead><tr><th style="width:28px"><input type="checkbox" id="chkAll"></th><th>Photo</th><th>Name</th><th>Sex</th><th>Age</th><th>Tag</th><th>Active</th><th></th></tr></thead>
         <tbody>
         <?php foreach($users as $u): ?>
           <tr>
             <td><input type="checkbox" class="uChk" value="<?=$u['id']?>"></td>
-            <form method="post">
+            <td style="width:72px">
+              <?php
+                $thumb = $u['photo_path'] ? ('/'.$u['photo_path']) : '/assets/admin/no-photo.svg';
+              ?>
+              <img src="<?=htmlspecialchars($thumb)?>" alt="photo" style="width:48px;height:48px;object-fit:cover;border-radius:50%">
+              <form action="/api/admin_upload_photo.php" method="post" enctype="multipart/form-data" style="margin-top:6px;display:flex;gap:6px;align-items:center">
+                <input type="hidden" name="user_id" value="<?=$u['id']?>">
+                <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" style="height:28px" required>
+                <button class="btn" type="submit">Upload</button>
+              </form>
+              <?php if ($u['photo_path']): ?>
+              <form action="/api/admin_delete_photo.php" method="post" style="margin-top:6px">
+                <input type="hidden" name="user_id" value="<?=$u['id']?>">
+                <button class="btn warn" type="submit">Remove</button>
+              </form>
+              <?php endif; ?>
+            </td>
+            <form method="post" style="display:contents">
               <input type="hidden" name="action" value="update_user" />
               <input type="hidden" name="u_id" value="<?=$u['id']?>" />
               <td><input name="u_name" value="<?=htmlspecialchars($u['name'])?>" required></td>

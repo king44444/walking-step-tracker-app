@@ -322,6 +322,9 @@ const palette = [
   '#a78bfa','#60a5fa','#7dd3fc','#64748b','#fda4af','#fde68a','#bbf7d0','#e9d5ff'
 ];
 
+let stackedChartRef = null;
+let renderGen = 0;
+
 function hydrateVisibility() {
   try {
     const raw = localStorage.getItem(VISIBLE_STORAGE_KEY);
@@ -579,6 +582,7 @@ export function renderAwards(payload) {
 
 export function renderCharts(people, charts) {
   const labels = DAY_ORDER;
+  const gen = ++renderGen;
   const perDayCanvas = document.getElementById('perDayChart');
   const stackedCanvas = document.getElementById('stackedTotalChart');
   const linesCanvas = document.getElementById('linesChart');
@@ -676,84 +680,69 @@ export function renderCharts(people, charts) {
   charts.push(perDayChart);
   attachFullscreenButton(perDayCanvas, perDayChart);
 
-  // family totals chart
-  const familyTotals = labels.map((_, idx) => people.reduce((sum, p) => sum + (Number.isFinite(p.days[idx]) ? p.days[idx] : 0), 0));
+  // family totals chart – build once with bars, then overlay line when data arrives
+  const familyTotals = labels.map((_, idx) =>
+    people.reduce((sum, p) => sum + (Number.isFinite(p.days[idx]) ? p.days[idx] : 0), 0)
+  );
 
-  // helper to create the mixed chart (bars + optional historical avg line)
-  function createFamilyTotalsChart(averages = []) {
-    const familyColor = getColorForName('Family Total', 0);
-    const barDataset = {
-      type: 'bar',
-      label: 'Family Total',
-      data: familyTotals,
-      borderWidth: 1,
-      borderColor: familyColor,
-      backgroundColor: toRgba(familyColor, 0.12)
-    };
+  // destroy any prior instance deterministically
+  if (stackedChartRef) { try { stackedChartRef.destroy(); } catch (e){} }
+  const familyColor = getColorForName('Family Total', 0);
 
-    const datasets = [barDataset];
+  stackedChartRef = new Chart(stackedCtx, {
+    data: {
+      labels,
+      datasets: [{
+        type: 'bar',
+        label: 'Family Total',
+        data: familyTotals,
+        borderWidth: 1,
+        borderColor: familyColor,
+        backgroundColor: toRgba(familyColor, 0.12),
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } },
+      plugins: {
+        legend: { display: true },
+        tooltip: { callbacks: { label: ctx => {
+          const v = (ctx.parsed && ctx.parsed.y != null) ? ctx.parsed.y : ctx.raw;
+          return `${ctx.dataset.label}: ${Math.round(v).toLocaleString()}`;
+        } } }
+      },
+      spanGaps: true,
+      animation: { duration: 600 }
+    }
+  });
+  charts.push(stackedChartRef);
+  attachFullscreenButton(stackedCanvas, stackedChartRef);
 
-    if (Array.isArray(averages) && averages.length === labels.length) {
+  // fetch and overlay averages; ignore stale responses
+  fetchFamilyWeekdayAverages()
+    .then(({ averages }) => {
+      if (gen !== renderGen || !Array.isArray(averages) || averages.length !== labels.length || !stackedChartRef) return;
+
       const lineColor = getColorForName('Historical Avg', 1);
-      datasets.push({
+      const lineDs = {
         type: 'line',
         label: 'Historical Avg',
         data: averages,
         borderWidth: 2,
-        borderDash: [6, 3],
+        borderDash: [6,3],
         pointRadius: 0,
         fill: false,
         borderColor: lineColor,
-      });
-    }
+      };
 
-    const chartData = { labels, datasets };
-    const chartOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() } }
-      },
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const v = (ctx.parsed && ctx.parsed.y != null) ? ctx.parsed.y : ctx.raw;
-              return `${ctx.dataset.label}: ${Math.round(v).toLocaleString()}`;
-            }
-          }
-        },
-        legend: { display: true }
-      },
-      spanGaps: true,
-      animation: { duration: 600 }
-    };
+      const i = stackedChartRef.data.datasets.findIndex(d => d.label === 'Historical Avg');
+      if (i >= 0) stackedChartRef.data.datasets[i] = lineDs;
+      else stackedChartRef.data.datasets.push(lineDs);
 
-    // Destroy any existing Chart instance on this canvas to avoid duplicate instances
-    try {
-      const existing = Chart.getChart(stackedCanvas);
-      if (existing) {
-        try { existing.destroy(); } catch (e) { /* ignore */ }
-        const idx = charts.findIndex(c => c === existing);
-        if (idx >= 0) charts.splice(idx, 1);
-      }
-    } catch (e) {
-      // Chart.getChart may not exist in older Chart.js versions; ignore errors
-    }
-
-    const stackedChart = new Chart(stackedCtx, { data: chartData, options: chartOptions });
-    charts.push(stackedChart);
-    attachFullscreenButton(stackedCanvas, stackedChart);
-  }
-
-  // attempt to load historical averages; fall back to no line on failure
-  fetchFamilyWeekdayAverages().then(json => {
-    const averages = Array.isArray(json && json.averages) ? json.averages : [];
-    createFamilyTotalsChart(averages);
-  }).catch((err) => {
-    console.error('failed to load family weekday averages', err);
-    createFamilyTotalsChart([]);
-  });
+      stackedChartRef.update();
+    })
+    .catch(() => { /* no-op */ });
 
   // line trajectories - use deterministic colors, visibility map, spanGaps, devicePixelRatio and animation guard
   const lineDatasets = people.map((p, i) => {

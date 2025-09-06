@@ -216,4 +216,4 @@ git commit -m "Add README.md — project overview, setup, and deployment"
 
 ## Author / Contact
 
-Repository maintained by the project owner. Add an author name or contact info in this README if desired.
+Repository maintained by the project owner.

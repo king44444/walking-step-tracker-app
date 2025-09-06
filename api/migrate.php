@@ -137,9 +137,23 @@ CREATE TABLE IF NOT EXISTS users (
 
 $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_name_uq ON users(name)");
 $cols = $pdo->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_ASSOC);
+
+// phone_e164 (idempotent)
 $hasPhone = false;
 foreach ($cols as $c) { if (isset($c['name']) && $c['name'] === 'phone_e164') { $hasPhone = true; break; } }
 if (!$hasPhone) { $pdo->exec("ALTER TABLE users ADD COLUMN phone_e164 TEXT"); }
+
+// photo_path and photo_consent (idempotent)
+$hasPhotoPath = false;
+$hasPhotoConsent = false;
+foreach ($cols as $c) {
+  if (isset($c['name'])) {
+    if ($c['name'] === 'photo_path') $hasPhotoPath = true;
+    if ($c['name'] === 'photo_consent') $hasPhotoConsent = true;
+  }
+}
+if (!$hasPhotoPath) { $pdo->exec("ALTER TABLE users ADD COLUMN photo_path TEXT"); }
+if (!$hasPhotoConsent) { $pdo->exec("ALTER TABLE users ADD COLUMN photo_consent INTEGER DEFAULT 0"); }
 
 $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_e164_uq ON users(phone_e164)");
 
