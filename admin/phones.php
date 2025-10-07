@@ -41,7 +41,7 @@ $rows = $pdo->query("SELECT name, COALESCE(phone_e164,'') AS phone_e164 FROM use
     </form>
   </td>
   <td></td>
-  <td><code>curl -X POST https://mikebking.com/dev/html/walk/api/sms.php --data-urlencode "From=<?= $p ?: '+1XXXXXXXXXX' ?>" --data-urlencode "Body=123"</code></td>
+  <td><code>curl -X POST ../api/sms.php --data-urlencode "From=<?= $p ?: '+1XXXXXXXXXX' ?>" --data-urlencode "Body=123"</code></td>
 </tr>
 <?php endforeach; ?>
 </table>
