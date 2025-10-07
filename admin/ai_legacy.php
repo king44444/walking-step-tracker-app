@@ -1,17 +1,31 @@
 <?php
 declare(strict_types=1);
-ini_set('display_errors','1'); error_reporting(E_ALL);
 
 try {
-  require_once __DIR__ . '/../api/db.php';
+  require_once __DIR__ . '/../vendor/autoload.php';
+  \App\Core\Env::bootstrap(dirname(__DIR__));
+  $pdo = \App\Config\DB::pdo();
   if (isset($_GET['migrate']) && $_GET['migrate'] === '1') {
     require_once __DIR__ . '/../api/migrate.php';
   }
   require_once __DIR__ . '/../api/lib/admin_auth.php';
   require_admin();
-  require_once __DIR__ . '/../api/lib/ai.php';
   require_once __DIR__ . '/../api/lib/phone.php';
   require_once __DIR__ . '/../api/lib/env.php';
+
+  // Local replacements for legacy ai helpers (migrated from api/lib/ai.php)
+  $csrf = \App\Security\Csrf::token();
+
+  function ai_enabled(PDO $pdo): bool {
+    $st = $pdo->prepare("SELECT value FROM app_settings WHERE key = 'ai_enabled' LIMIT 1");
+    $st->execute();
+    $v = $st->fetchColumn();
+    return ($v === '1');
+  }
+  function ai_enqueue(PDO $pdo, string $type, ?int $user_id, ?string $week, string $model='rules-v0', ?string $scope_key=NULL) {
+    $stmt = $pdo->prepare("INSERT INTO ai_messages(type, scope_key, user_id, week, content, model) VALUES(?,?,?,?,?,?)");
+    $stmt->execute([$type, $scope_key, $user_id, $week, '', $model]);
+  }
 
 
   $info = '';
@@ -278,12 +292,13 @@ $selectedWeek = $curWeek;
 <script>
 document.addEventListener('click', async (e) => {
   const del = e.target.closest('.ai-delete');
-  if (del) {
+      if (del) {
     const id = del.dataset.id;
     if (!confirm('Delete this message?')) return;
     try {
       const form = new FormData(); form.append('id', id);
-      const res = await fetch('/api/ai_delete_message.php', { method: 'POST', body: form, credentials: 'same-origin' });
+      form.append('csrf', '<?= htmlspecialchars($csrf) ?>');
+      const res = await fetch('/admin/ai/delete', { method: 'POST', body: form, credentials: 'same-origin' });
       if (!res.ok) { alert('Delete failed'); return; }
       const json = await res.json();
       if (!json.ok) { alert('Delete failed'); return; }
@@ -294,12 +309,13 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-document.getElementById('send-approved-btn')?.addEventListener('click', async () => {
+  document.getElementById('send-approved-btn')?.addEventListener('click', async () => {
   const week = document.querySelector('#week-input')?.value || '';
   if (!week) { alert('Pick a week'); return; }
   try {
     const fd = new FormData(); fd.append('week', week);
-    const res = await fetch('/api/ai_send_approved.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+    fd.append('csrf', '<?= htmlspecialchars($csrf) ?>');
+    const res = await fetch('/admin/ai/send-approved', { method: 'POST', body: fd, credentials: 'same-origin' });
     if (!res.ok) { const t = await res.text(); alert('Send failed: ' + t); return; }
     const data = await res.json();
     alert('Sent ' + (data.count||0) + ' message(s).');

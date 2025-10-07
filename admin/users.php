@@ -16,9 +16,8 @@ if (!isset($_SERVER['PHP_AUTH_USER']) ||
 
 try {
 require_once __DIR__ . '/../vendor/autoload.php';
-App\Core\Env::bootstrap(dirname(__DIR__));
-use App\Config\DB;
-$pdo = DB::pdo();
+\App\Core\Env::bootstrap(dirname(__DIR__));
+$pdo = \App\Config\DB::pdo();
 // Ensure schema exists without echoing anything
 ob_start();
 require_once __DIR__ . '/../api/migrate.php';
