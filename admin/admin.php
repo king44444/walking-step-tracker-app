@@ -1,24 +1,14 @@
 <?php
 declare(strict_types=1);
 $SITE_ASSETS = '../site/assets';
-// Change credentials on Pi after deploy.
+// Change credentials via .env (ADMIN_USER, ADMIN_PASS)
 ini_set('display_errors','1'); error_reporting(E_ALL);
-/* Basic auth (edit credentials) */
-const ADMIN_USER = 'mike';
-const ADMIN_PASS = 'nikki100378';
-
-if (!isset($_SERVER['PHP_AUTH_USER']) ||
-    $_SERVER['PHP_AUTH_USER'] !== ADMIN_USER ||
-    $_SERVER['PHP_AUTH_PW'] !== ADMIN_PASS) {
-  header('WWW-Authenticate: Basic realm="KW Admin"');
-  header('HTTP/1.0 401 Unauthorized');
-  echo 'Auth required';
-  exit;
-}
 
 try {
 require __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
+require_once __DIR__ . '/../api/lib/admin_auth.php';
+require_admin();
 $pdo = \App\Config\DB::pdo();
 // Ensure schema exists without echoing anything
 ob_start();
