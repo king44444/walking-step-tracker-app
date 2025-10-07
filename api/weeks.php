@@ -37,14 +37,33 @@ try {
   $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
   if ($method === 'GET') {
-    // List weeks sorted desc
+    // List weeks sorted desc and normalize/dedupe output
     $cols = columns($pdo, 'weeks');
     $hasStarts = in_array('starts_on', $cols, true);
     $sql = $hasStarts
       ? "SELECT COALESCE(starts_on, week) AS starts_on, COALESCE(label, COALESCE(starts_on, week)) AS label, COALESCE(finalized, CASE WHEN finalized_at IS NOT NULL THEN 1 ELSE 0 END, 0) AS finalized FROM weeks WHERE COALESCE(starts_on, week) IS NOT NULL ORDER BY COALESCE(starts_on, week) DESC"
       : "SELECT week AS starts_on, COALESCE(label, week) AS label, COALESCE(finalized, CASE WHEN finalized_at IS NOT NULL THEN 1 ELSE 0 END, 0) AS finalized FROM weeks WHERE week IS NOT NULL ORDER BY week DESC";
     $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
-    echo json_encode(['ok'=>true, 'weeks'=>$rows], JSON_UNESCAPED_SLASHES);
+    $map = [];
+    foreach ($rows as $r) {
+      $iso = iso_date((string)($r['starts_on'] ?? '')) ?? (string)($r['starts_on'] ?? '');
+      if (!isset($map[$iso])) {
+        $map[$iso] = [
+          'starts_on' => $iso,
+          'label' => (string)($r['label'] ?? $iso),
+          'finalized' => (int)($r['finalized'] ?? 0)
+        ];
+      } else {
+        // merge: prefer finalized=1 and keep a non-empty label
+        if (($r['finalized'] ?? 0) && !($map[$iso]['finalized'] ?? 0)) $map[$iso]['finalized'] = 1;
+        $lbl = trim((string)($r['label'] ?? ''));
+        if ($lbl !== '' && ($map[$iso]['label'] ?? '') === '') $map[$iso]['label'] = $lbl;
+      }
+    }
+    // sort desc by starts_on
+    $out = array_values($map);
+    usort($out, function($a,$b){ return strcmp($b['starts_on'], $a['starts_on']); });
+    echo json_encode(['ok'=>true, 'weeks'=>$out], JSON_UNESCAPED_SLASHES);
     return;
   }
 
