@@ -23,7 +23,7 @@ export async function buildWeekSelector() {
     const value = valOf(w);
     return `<option value="${safe(value)}">${safe(label)} ${w.finalized ? '— finalized' : ''}</option>`;
   }).join('');
-  sel.onchange = () => loadWeek(sel.value);
+  sel.onchange = async () => { try { await loadWeek(sel.value); } catch (e) { console.error(e); setStatus('Failed to load week', 'err'); } };
 
   // Management UI: create + delete
   injectWeekManageUI(sel);
@@ -31,7 +31,7 @@ export async function buildWeekSelector() {
   if (weeksList.length) {
     currentWeek = valOf(weeksList[0]);
     sel.value = currentWeek;
-    await loadWeek(currentWeek);
+    try { await loadWeek(currentWeek); } catch (e) { console.error(e); setStatus('Failed to load week', 'err'); }
   } else {
     setStatus('No weeks yet. Create one.', 'warn');
   }
@@ -40,11 +40,15 @@ export async function buildWeekSelector() {
 export async function loadWeek(week) {
   setStatus(`Loading ${week}…`);
   const data = await fetchWeekData(week);
+  if (!data || data.ok === false) {
+    setStatus('Failed to load week data', 'err');
+    return;
+  }
   currentWeek = data.week;
   globalData = ingestRows(data.rows || []);
   const stats = computeStats(globalData, lifetimeMap, data.todayIdx, data);
   renderAll(stats, globalData, charts);
-  setStatus(`Loaded ${data.label || data.week} (${data.source})`, 'ok');
+  setStatus(`Loaded ${data.label || data.week || week} (${data.source || 'live'})`, 'ok');
 }
 
 window.addEventListener('DOMContentLoaded', async () => {

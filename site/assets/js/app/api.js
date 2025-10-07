@@ -31,9 +31,15 @@ export async function deleteWeek(date, force=false) {
 export async function fetchWeekData(week) {
   const url = new URL(`${BASE}api/data.php`, location.origin);
   if (week) url.searchParams.set("week", week);
-  const res = await fetch(url.toString(), { cache: "no-store" });
-  if (!res.ok) throw new Error("data fetch failed");
-  return await res.json();
+  try {
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    const json = await res.json().catch(()=>({ ok:false, error:'bad_json' }));
+    if (!res.ok || json.ok === false) throw new Error(json.error || 'data_error');
+    return json;
+  } catch (e) {
+    console.error('fetchWeekData failed', e);
+    throw e;
+  }
 }
 
 export async function fetchLifetime() {
