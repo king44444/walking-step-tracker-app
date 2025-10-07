@@ -141,7 +141,8 @@ export async function renderCharts(people, charts) {
 
 export function renderAwards(stats) {
   const list = document.getElementById('awardsList');
-  list.innerHTML = stats.awards.map(a => `<li>${safe(a.name || a.user)} — ${safe(a.label)}</li>`).join('');
+  const awards = (stats && Array.isArray(stats.awards)) ? stats.awards : [];
+  list.innerHTML = awards.map(a => `<li>${safe(a.name || a.user)} — ${safe(a.label)}</li>`).join('');
 }
 
 export function renderCards(people) {

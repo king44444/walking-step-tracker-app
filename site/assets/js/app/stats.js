@@ -1,4 +1,4 @@
-import { DAY_ORDER, DAILY_GOAL_10K, DAILY_GOAL_15K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, CHERYL_THRESHOLD, THIRTY_K_THRESHOLD, LIFETIME_STEP_MILESTONES } from './config.js';
+import { DAY_ORDER, DAILY_GOAL_10K, DAILY_GOAL_15K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, CHERYL_THRESHOLD, THIRTY_K_THRESHOLD, LIFETIME_STEP_MILESTONES, AWARD_LIMIT } from './config.js';
 import { computeLevel } from './levels.js';
 
 // Small helper used by computeStats
@@ -78,6 +78,15 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     const lifetimeBest  = Number(life.best)  || 0;
     const { level, toNext } = computeLevel(lifetimeTotal);
 
+    // mark missing (no report) up to todayIdx
+    // Using row[DAY_ORDER[i]] (raw) because it preserves absence vs 0
+    if (todayIdx >= 0) {
+      for (let i = 0; i <= todayIdx && i < DAY_ORDER.length; i++) {
+        const v = row[DAY_ORDER[i]];
+        if (!(Number.isFinite(v) && v > 0)) { /* missing */ }
+      }
+    }
+
     return {
       name: row.Name,
       tag: row.Tag,
@@ -100,6 +109,7 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
   const firstThresholds = [];
   const lifetimeStepClubs = [];
   const lifetimeLevelMilestones = [];
+  const missing = [];
 
   if (todayIdx >= 0 && todayIdx < DAY_ORDER.length) {
     const dayIdx = todayIdx;
@@ -181,6 +191,14 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
         lifetimeLevelMilestones.push({ name, level: lm });
       }
     });
+
+    // aggregate missing names up to todayIdx
+    if (todayIdx >= 0) {
+      for (let i = 0; i <= todayIdx && i < DAY_ORDER.length; i++) {
+        const v = p.days[i];
+        if (!(Number.isFinite(v) && v > 0)) { missing.push(name); break; }
+      }
+    }
   });
 
   // sort day-level lists to prefer higher gain and earlier day
@@ -208,6 +226,23 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     if (best) firstThresholds.push(best);
   });
 
+  // Simple awards based on counts
+  const awards = [];
+  function takeTop(list, key, label) {
+    const sorted = [...list].sort((a,b)=> (b[key]||0) - (a[key]||0));
+    const seen = new Set();
+    for (const p of sorted) {
+      const v = p[key] || 0;
+      if (v <= 0) break;
+      if (seen.has(p.name)) continue;
+      awards.push({ name: p.name, label });
+      seen.add(p.name);
+      if (seen.size >= AWARD_LIMIT) break;
+    }
+  }
+  takeTop(people, 'thirtyK', '30k Day');
+  takeTop(people, 'cherylCount', 'Cheryl Award');
+
   return {
     people,
     todayIdx,
@@ -217,5 +252,7 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     firstThresholds,
     lifetimeStepClubs,
     lifetimeLevelMilestones,
+    awards,
+    missing,
   };
 }
