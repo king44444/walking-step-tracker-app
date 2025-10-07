@@ -1,40 +1,71 @@
 import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION } from './config.js';
-import { fmt, safe, setStatus } from './utils.js';
+import { fmt, safe, pickNudge, setStatus } from './utils.js';
 import { fetchFamilyWeekdayAverages } from './api.js';
 
+// Module scope state: visibility, colors, persistence version
 const VISIBLE_STORAGE_KEY = 'trajVisible_v1';
 const visibleDatasets = new Map();
 const colorByName = new Map();
-const palette = ['#0ea5e9','#06b6d4','#34d399','#86efac','#facc15','#f97316','#fb7185','#f472b6','#a78bfa','#60a5fa','#7dd3fc','#64748b','#fda4af','#fde68a','#bbf7d0','#e9d5ff'];
+const palette = [
+  '#0ea5e9','#06b6d4','#34d399','#86efac','#facc15','#f97316','#fb7185','#f472b6',
+  '#a78bfa','#60a5fa','#7dd3fc','#64748b','#fda4af','#fde68a','#bbf7d0','#e9d5ff'
+];
 
 let stackedChartRef = null;
 let renderGen = 0;
 
 function hydrateVisibility() {
-  try { const raw = localStorage.getItem(VISIBLE_STORAGE_KEY); if (!raw) return; const obj = JSON.parse(raw); if (obj && typeof obj === 'object') { Object.entries(obj).forEach(([k,v]) => visibleDatasets.set(k, !!v)); } } catch (e) {}
+  try {
+    const raw = localStorage.getItem(VISIBLE_STORAGE_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object') {
+      Object.entries(obj).forEach(([k,v]) => visibleDatasets.set(k, !!v));
+    }
+  } catch (e) { /* ignore */ }
 }
 function persistVisibility() {
-  try { const obj = {}; visibleDatasets.forEach((v,k) => { obj[k] = !!v; }); localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+  try {
+    const obj = {};
+    visibleDatasets.forEach((v,k) => { obj[k] = !!v; });
+    localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify(obj));
+  } catch (e) { /* ignore */ }
 }
-function getColorForName(name, idx = 0) { if (!name) return palette[0]; if (colorByName.has(name)) return colorByName.get(name); const color = palette[idx % palette.length]; colorByName.set(name, color); return color; }
+function getColorForName(name, idx = 0) {
+  if (!name) return palette[0];
+  if (colorByName.has(name)) return colorByName.get(name);
+  const color = palette[idx % palette.length];
+  colorByName.set(name, color);
+  return color;
+}
 
+// hydrate on module load
 hydrateVisibility();
 
+// Render helpers expect callers to pass the computed stats and a mutable charts array
 export function renderAll(stats, dataRows, charts) {
+  // destroy existing charts
   charts.forEach(c => { try { c.destroy(); } catch(e){} });
   charts.length = 0;
+
   renderLeaderboard(stats.people);
   renderAwards(stats);
   renderCharts(stats.people, charts);
   renderCards(stats.people);
   renderMissing(stats.missing);
-  try { document.querySelector('footer').textContent = `Built for the King family. Tutu approved. - v ${APP_VERSION}`; } catch (e) {}
+
+  // show app version in the footer
+  try {
+    document.querySelector('footer').textContent = `Built for the King family. Tutu approved. - v ${APP_VERSION}`;
+  } catch (e) { /* ignore if footer missing */ }
 }
 
 export function renderLeaderboard(people) {
   const tbody = document.querySelector('#leaderboard tbody');
   const sorted = [...people].sort((a,b) => b.total - a.total);
+
   document.getElementById('leaderboardPosition').textContent = "";
+
   tbody.innerHTML = sorted.map((p, idx) => {
     const dash = '<span class="text-white/40">—</span>';
     const total = fmt(p.total) || dash;
@@ -68,7 +99,7 @@ export function renderLeaderboard(people) {
       const by = key === 'name' ? (a,b) => a.name.localeCompare(b.name) : (a,b)=> b.total - a.total;
       const arr = [...people].sort(by);
       tbody.innerHTML = arr.map((p, idx) => {
-        return `<tr class="border-t border-white/5">
+    return `<tr class="border-t border-white/5">
           <td class="py-2 pr-2">${idx+1}</td>
           <td class="py-2 pr-2">${safe(p.name)}</td>
           <td class="py-2 text-right stat">${fmt(p.total)}</td>
@@ -86,10 +117,23 @@ export function renderLeaderboard(people) {
   });
 }
 
+function datasetFor(name, idx) {
+  const color = getColorForName(name, idx);
+  return {
+    label: name,
+    borderColor: color,
+    backgroundColor: color + '33',
+    tension: 0.25,
+    fill: false,
+    data: [],
+    hidden: (visibleDatasets.has(name) ? !visibleDatasets.get(name) : false)
+  };
+}
+
 export async function renderCharts(people, charts) {
   try {
     const avg = await fetchFamilyWeekdayAverages();
-    // charts omitted for brevity (rendering logic would go here)
+    // omitted: add Chart.js charts similarly to public version
   } catch (e) {
     setStatus('Failed to load averages', 'warn');
   }
@@ -97,7 +141,7 @@ export async function renderCharts(people, charts) {
 
 export function renderAwards(stats) {
   const list = document.getElementById('awardsList');
-  list.innerHTML = stats.awards.map(a => `<li>${safe(a.user)} — ${safe(a.label)}</li>`).join('');
+  list.innerHTML = stats.awards.map(a => `<li>${safe(a.name || a.user)} — ${safe(a.label)}</li>`).join('');
 }
 
 export function renderCards(people) {
@@ -109,4 +153,3 @@ export function renderMissing(missing) {
   const list = document.getElementById('missingList');
   list.innerHTML = (missing||[]).map(n => `<li>${safe(n)}</li>`).join('');
 }
-

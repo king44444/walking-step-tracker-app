@@ -1,27 +1,18 @@
+import { DAY_ORDER, DISPLAY_NAME_OVERRIDES } from './config.js';
+import { toNum } from './utils.js';
+
+// Normalize incoming rows into canonical objects.
+// Returns an array of rows like: { Name, Tag, Sex, Age, Monday..Saturday, "Total Steps" }
 export function ingestRows(rows) {
-  const arr = Array.isArray(rows) ? rows : [];
-  return arr.map(r => ({
-    name: (r.name || '').trim(),
-    monday: num(r.monday),
-    tuesday: num(r.tuesday),
-    wednesday: num(r.wednesday),
-    thursday: num(r.thursday),
-    friday: num(r.friday),
-    saturday: num(r.saturday),
-    total: Number(r.total) || 0,
-    best: Number(r.best) || 0,
-    avg: Number(r.avg) || 0,
-    thirtyK: r.thirtyK ?? 0,
-    cherylCount: r.cherylCount ?? 0,
-    fifteenK: r.fifteenK ?? 0,
-    tenK: r.tenK ?? 0,
-    two5K: r.two5K ?? 0,
-    oneK: r.oneK ?? 0,
-  }));
+  return (rows || []).map(r => {
+    const out = {
+      Name: DISPLAY_NAME_OVERRIDES[(r.name || "").trim()] || (r.name || "").trim(),
+      Tag: (r.tag || "").toString().trim(),
+      Sex: (r.sex || "").toString().trim(),
+      Age: r.age != null ? Number(r.age) : null,
+    };
+    DAY_ORDER.forEach(d => out[d] = toNum(r[d.toLowerCase()]));
+    out["Total Steps"] = DAY_ORDER.reduce((a,d)=> a + (Number.isFinite(out[d]) ? out[d] : 0), 0);
+    return out;
+  });
 }
-
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
