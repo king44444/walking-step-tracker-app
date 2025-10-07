@@ -29,7 +29,18 @@ export async function buildWeekSelector() {
   injectWeekManageUI(sel);
 
   if (weeksList.length) {
-    currentWeek = valOf(weeksList[0]);
+    // Prefer the most recent week that actually has data
+    let picked = null;
+    for (const w of weeksList) {
+      const v = valOf(w);
+      try {
+        const d = await fetchWeekData(v);
+        if (d && d.ok !== false && Array.isArray(d.rows) && d.rows.length > 0) { picked = v; break; }
+      } catch (e) {
+        // ignore and try next
+      }
+    }
+    currentWeek = picked || valOf(weeksList[0]);
     sel.value = currentWeek;
     try { await loadWeek(currentWeek); } catch (e) { console.error(e); setStatus('Failed to load week', 'err'); }
   } else {
