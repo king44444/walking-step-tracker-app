@@ -59,7 +59,8 @@ export async function loadWeek(week) {
   globalData = ingestRows(data.rows || []);
   const stats = computeStats(globalData, lifetimeMap, data.todayIdx, data);
   renderAll(stats, globalData, charts);
-  setStatus(`Loaded ${data.label || data.week || week} (${data.source || 'live'})`, 'ok');
+  const count = Array.isArray(globalData) ? globalData.length : 0;
+  setStatus(`Loaded ${data.label || data.week || week} (${data.source || 'live'}) — ${count} rows`, 'ok');
 }
 
 window.addEventListener('DOMContentLoaded', async () => {

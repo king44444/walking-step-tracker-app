@@ -61,6 +61,7 @@ export function renderAll(stats, dataRows, charts) {
 }
 
 export function renderLeaderboard(people) {
+  try { console.debug('renderLeaderboard people:', Array.isArray(people) ? people.length : -1); } catch(e){}
   const tbody = document.querySelector('#leaderboard tbody');
   const sorted = [...people].sort((a,b) => b.total - a.total);
 
@@ -146,6 +147,7 @@ export function renderAwards(stats) {
 }
 
 export function renderCards(people) {
+  try { console.debug('renderCards people:', Array.isArray(people) ? people.length : -1); } catch(e){}
   const sect = document.getElementById('cards');
   sect.innerHTML = people.map(p => `<div class="card p-3">${safe(p.name)}</div>`).join('');
 }
