@@ -31,8 +31,10 @@ export async function buildWeekSelector() {
 export async function loadWeek(week) {
   setStatus(`Loading ${week}…`);
   const data = await fetchWeekData(week);
+  try { console.debug('[loadWeek] week:', week, 'source:', data?.source, 'rows:', Array.isArray(data?.rows) ? data.rows.length : -1); } catch(e){}
   currentWeek = data.week;
   globalData = ingestRows(data.rows || []);
+  try { console.debug('[loadWeek] ingested rows:', Array.isArray(globalData) ? globalData.length : -1, globalData?.slice?.(0,1)); } catch(e){}
   const stats = computeStats(globalData, lifetimeMap, data.todayIdx, data);
   renderAll(stats, globalData, charts);
   setStatus(`Loaded ${data.label || data.week} (${data.source})`, 'ok');

@@ -44,6 +44,7 @@ hydrateVisibility();
 
 // Render helpers expect callers to pass the computed stats and a mutable charts array
 export function renderAll(stats, dataRows, charts) {
+  try { console.debug('[renderAll] people:', Array.isArray(stats?.people) ? stats.people.length : -1, 'todayIdx:', stats?.todayIdx, 'rows:', Array.isArray(dataRows) ? dataRows.length : -1); } catch(e){}
   // destroy existing charts
   charts.forEach(c => { try { c.destroy(); } catch(e){} });
   charts.length = 0;
@@ -61,6 +62,7 @@ export function renderAll(stats, dataRows, charts) {
 }
 
 export function renderLeaderboard(people) {
+  try { console.debug('[renderLeaderboard] people:', Array.isArray(people) ? people.length : -1, people?.slice?.(0,3)); } catch(e){}
   const tbody = document.querySelector('#leaderboard tbody');
   const sorted = [...people].sort((a,b) => b.total - a.total);
 
