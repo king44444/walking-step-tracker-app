@@ -455,7 +455,7 @@ if ($curWeek) {
 <div class="wrap">
     <div class="card">
       <h2>KW Admin</h2>
-      <div>Signed in as <b><?=htmlspecialchars($_SERVER['PHP_AUTH_USER'])?></b>. · <a href="/dev/html/walk/site/">View Dashboard</a> · <a href="phones.php">Phones</a> · <a href="/dev/html/walk/api/lifetime.php">Lifetime JSON</a></div>
+      <div>Signed in as <b><?=htmlspecialchars($_SERVER['PHP_AUTH_USER'])?></b>. · <a href="../site/">View Dashboard</a> · <a href="phones.php">Phones</a> · <a href="../api/lifetime.php">Lifetime JSON</a></div>
     <?php
       if ($curWeek) {
         $wk = null;
