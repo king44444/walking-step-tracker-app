@@ -527,13 +527,13 @@ if ($curWeek) {
                 $thumb = $u['photo_path'] ? ('/'.$u['photo_path']) : ($SITE_ASSETS . '/admin/no-photo.svg');
               ?>
               <img src="<?=htmlspecialchars($thumb)?>" alt="photo" style="width:48px;height:48px;object-fit:cover;border-radius:50%">
-              <form action="/api/admin_upload_photo.php" method="post" enctype="multipart/form-data" style="margin-top:6px;display:flex;gap:6px;align-items:center">
+              <form action="../api/admin_upload_photo.php" method="post" enctype="multipart/form-data" style="margin-top:6px;display:flex;gap:6px;align-items:center">
                 <input type="hidden" name="user_id" value="<?=$u['id']?>">
                 <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" style="height:28px" required>
                 <button class="btn" type="submit">Upload</button>
               </form>
               <?php if ($u['photo_path']): ?>
-              <form action="/api/admin_delete_photo.php" method="post" style="margin-top:6px">
+              <form action="../api/admin_delete_photo.php" method="post" style="margin-top:6px">
                 <input type="hidden" name="user_id" value="<?=$u['id']?>">
                 <button class="btn warn" type="submit">Remove</button>
               </form>
