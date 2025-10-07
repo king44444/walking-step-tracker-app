@@ -1,4 +1,5 @@
 <?php
+$SITE_ASSETS = '../site/assets';
 // Change credentials on Pi after deploy.
 declare(strict_types=1);
 ini_set('display_errors','1'); error_reporting(E_ALL);
@@ -16,7 +17,9 @@ if (!isset($_SERVER['PHP_AUTH_USER']) ||
 }
 
 try {
-require __DIR__ . '/../api/db.php';
+require __DIR__ . '/../vendor/autoload.php';
+\App\Core\Env::bootstrap(dirname(__DIR__));
+$pdo = \App\Config\DB::pdo();
 // Ensure schema exists without echoing anything
 ob_start();
 require __DIR__ . '/../api/migrate.php';
@@ -521,7 +524,7 @@ if ($curWeek) {
             <td><input type="checkbox" class="uChk" value="<?=$u['id']?>"></td>
             <td style="width:72px">
               <?php
-                $thumb = $u['photo_path'] ? ('/'.$u['photo_path']) : '/assets/admin/no-photo.svg';
+                $thumb = $u['photo_path'] ? ('/'.$u['photo_path']) : ($SITE_ASSETS . '/admin/no-photo.svg');
               ?>
               <img src="<?=htmlspecialchars($thumb)?>" alt="photo" style="width:48px;height:48px;object-fit:cover;border-radius:50%">
               <form action="/api/admin_upload_photo.php" method="post" enctype="multipart/form-data" style="margin-top:6px;display:flex;gap:6px;align-items:center">
