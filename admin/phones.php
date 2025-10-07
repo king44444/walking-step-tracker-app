@@ -1,4 +1,10 @@
 <?php
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+\App\Core\Env::bootstrap(dirname(__DIR__));
+require_once __DIR__ . '/../api/lib/admin_auth.php';
+require_admin();
+
 require __DIR__.'/../api/util.php';
 require __DIR__.'/../api/lib/phone.php';
 $pdo = pdo();
