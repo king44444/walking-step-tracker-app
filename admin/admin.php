@@ -1,7 +1,7 @@
 <?php
+declare(strict_types=1);
 $SITE_ASSETS = '../site/assets';
 // Change credentials on Pi after deploy.
-declare(strict_types=1);
 ini_set('display_errors','1'); error_reporting(E_ALL);
 /* Basic auth (edit credentials) */
 const ADMIN_USER = 'mike';
