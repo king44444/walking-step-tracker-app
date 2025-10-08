@@ -114,9 +114,14 @@ See `api/README.md` for Twilio-specific and signature debugging notes.
 - `api/weeks.php` — list of weeks (used by frontend)
 - `api/lifetime.php` — lifetime stats view
 
-- Admin UI:
-  - `admin/phones.php` — enroll or normalize phone numbers (save E.164 in `users.phone_e164`)
-  - `admin/admin.php` — admin tasks (requires basic auth in deploy environment)
+- Admin UI (requires basic auth in deploy environment):
+  - `admin/index.php` — admin home and quick actions
+  - `admin/weeks.php` — create/delete/finalize weeks
+  - `admin/entries.php` — edit week entries
+  - `admin/users.php` — manage users and bulk add to week
+  - `admin/phones.php` — enroll/normalize phone numbers (E.164)
+  - `admin/photos.php` — upload/remove user photos
+  - `admin/ai.php` — AI settings, queue, send
 
 ---
 
@@ -213,6 +218,45 @@ git commit -m "Add README.md — project overview, setup, and deployment"
 - Add CI pipeline to run `php -l` and simple linting on commits.
 
 ---
+
+## AI Image Awards
+
+Generate and attach award images (badges) for user milestones. Images are stored under `site/assets/awards/{user_id}/` and referenced by pages using relative paths (no domain-root assumptions).
+
+- Storage
+  - Files: `site/assets/awards/{user_id}/{kind}-{milestone}-{YYYYMMDD}.webp|.svg`
+  - DB: `ai_awards.image_path` stores a relative path without the leading `assets/` (e.g., `awards/15/lifetime_steps-100000-20251006.webp`).
+  - Pages under `site/` render via `assets/` prefix (already handled in `site/user.php`).
+
+- Settings
+  - `ai.enabled` — global toggle; when OFF, endpoints return `{ ok:true, skipped:true, reason: "ai.disabled" }`.
+  - `ai.award.enabled` — category toggle; when OFF, endpoints return `{ ok:true, skipped:true, reason: "award.disabled" }`.
+  - `ai.image.provider` — `openrouter` or `local` (default: `local`).
+  - `ai.image.model` — image model (used when provider is not `local`).
+
+- Provider
+  - OpenRouter image generation is abstracted and currently stubbed; when unavailable, the system falls back to a local generator.
+  - Local fallback writes a clean SVG badge and, if GD is available, a WebP raster image.
+
+- Endpoints
+  - `POST api/award_generate.php` (admin + CSRF)
+    - Body: JSON `{ user_id, kind, milestone_value, force? }`
+    - Response: `{ ok:true, path }` or `{ ok:true, skipped:true, reason }` or `{ ok:false, error }`
+    - On success, updates the `ai_awards` row with `image_path` and metadata.
+  - `POST api/award_regen_missing.php` (admin + CSRF)
+    - Body: JSON `{ kind? }` — optional filter.
+    - Response: `{ ok:true, generated, skipped, errors }`.
+
+- Admin UI
+  - New “Awards Images” card in `admin/index.php` under AI Settings: generate a single award or regenerate all missing.
+
+- Logging
+  - Events logged to `data/logs/ai/award_images.log`:
+    - `[timestamp] user={id}:{name} kind={kind} milestone={val} provider={p}|fallback path={path} cost={cost|null} status=ok|skipped|error reason={...}`
+
+- Idempotency
+  - If an image for the same user+kind+milestone exists within the last 24 hours and `force` is false, the latest file is reused and returned.
+
 
 ## Author / Contact
 

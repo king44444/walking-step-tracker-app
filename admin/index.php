@@ -154,6 +154,27 @@ $SITE_ASSETS = '../site/assets';
       <div id="aiLog" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; white-space:pre-wrap; background:#0b1020; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; max-height:220px; overflow:auto;">Loading…</div>
       <div class="row" style="margin-top:8px"><button id="refreshLogBtn" class="btn" type="button">Refresh log</button></div>
     </div>
+
+    <div class="card">
+      <h2>Awards Images</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label>User ID: <input id="awUserId" type="number" min="1" placeholder="123"></label>
+        <label>Kind:
+          <select id="awKind">
+            <option value="lifetime_steps">lifetime_steps</option>
+            <option value="attendance_weeks">attendance_weeks</option>
+            <option value="custom">custom</option>
+          </select>
+        </label>
+        <label>Milestone: <input id="awValue" type="number" min="1" placeholder="100000"></label>
+        <label class="muted"><input type="checkbox" id="awForce"> Force regenerate</label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button class="btn" id="awGenBtn">Generate Image</button>
+        <button class="btn" id="awRegenBtn">Regen Missing</button>
+      </div>
+      <div id="awStatus" class="muted"></div>
+    </div>
   </div>
 
 </div>
@@ -303,6 +324,38 @@ $SITE_ASSETS = '../site/assets';
   loadWeeks();
   loadAi();
   loadAiLog();
+
+  // --- Awards Images ---
+  async function awardGenerate(){
+    const uid = parseInt(document.getElementById('awUserId').value, 10) || 0;
+    const kind = document.getElementById('awKind').value.trim();
+    const val = parseInt(document.getElementById('awValue').value, 10) || 0;
+    const force = document.getElementById('awForce').checked;
+    const status = document.getElementById('awStatus');
+    if (!uid || !kind || !val) { alert('Enter user_id, kind, and milestone'); return; }
+    status.textContent = 'Generating…';
+    try {
+      const res = await fetch(base+'api/award_generate.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ user_id: uid, kind, milestone_value: val, force }) });
+      const j = await res.json();
+      if (j && j.ok && j.skipped) { status.textContent = 'Skipped: ' + (j.reason||''); return; }
+      if (j && j.ok) { status.textContent = 'OK: ' + (j.path||''); return; }
+      status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
+    } catch (e) { status.textContent = 'Error generating'; }
+  }
+  async function awardRegenMissing(){
+    const kind = document.getElementById('awKind').value.trim();
+    const status = document.getElementById('awStatus');
+    status.textContent = 'Regenerating missing…';
+    try {
+      const body = (kind && kind !== 'custom') ? JSON.stringify({ kind }) : JSON.stringify({});
+      const res = await fetch(base+'api/award_regen_missing.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body });
+      const j = await res.json();
+      if (j && j.ok) { status.textContent = `Generated: ${j.generated||0}, errors: ${j.errors||0}`; return; }
+      status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
+    } catch (e) { status.textContent = 'Error regenerating'; }
+  }
+  document.getElementById('awGenBtn').addEventListener('click', awardGenerate);
+  document.getElementById('awRegenBtn').addEventListener('click', awardRegenMissing);
 })();
 </script>
 </body>
