@@ -7,6 +7,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 require_once __DIR__ . '/../api/lib/admin_auth.php';
 require_admin();
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+$csrfToken = \App\Security\Csrf::token();
 $pdo = \App\Config\DB::pdo();
 // Ensure schema exists without echoing anything
 ob_start();
@@ -31,6 +33,8 @@ $info = '';
 $err  = '';
 
 if (is_post()) {
+  // CSRF
+  if (!\App\Security\Csrf::validate((string)($_POST['csrf'] ?? ''))) { $err = 'invalid_csrf'; } else {
   $action = post('action', '');
   try {
     if ($action === 'create_user') {
@@ -94,7 +98,8 @@ if (is_post()) {
       $info = "Added $added user(s) to $week. Skipped $skipped.";
     }
 
-  } catch (Throwable $e) {
+  }
+  catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
   }
@@ -106,16 +111,16 @@ $users = $pdo->query("SELECT id,name,sex,age,tag,is_active,photo_path,ai_opt_in,
 $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetchAll();
 ?>
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>KW Admin — Users</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KW Admin — Users</title>
+  <link rel="icon" href="../favicon.ico" />
+  <link rel="stylesheet" href="../public/assets/css/app.css" />
   <style>
-    /* Reuse admin styles but keep any users-scoped CSS here */
-    body { font: 14px system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#0b1020; color:#e6ecff; }
-    a { color:#9ecbff; }
-    .wrap { max-width: 100%; margin: 24px auto; padding: 0 16px; }
+    body { background:#0b1020; color:#e6ecff; font: 14px system-ui, -apple-system, "Segoe UI", Roboto, Arial; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
     .card { background:#0f1530; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:16px; }
     input, select { background:#111936; color:#e6ecff; border:1px solid #1e2a5a; border-radius:8px; padding:6px 8px; }
     table { width:100%; border-collapse: collapse; }
@@ -124,9 +129,6 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
     .btn { padding:8px 10px; border-radius:8px; background:#1a2350; border:1px solid #2c3a7a; color:#e6ecff; cursor:pointer; }
     .btn.warn { background:#4d1a1a; border-color:#7a2c2c; }
     .ok { color:#7ce3a1; } .err { color:#f79; }
-    .split { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
-    @media (max-width:900px){ .split{ grid-template-columns: 1fr; } }
-
     /* Users table specific */
     #usersTable { width:100%; border-collapse:collapse; table-layout:fixed; }
     #usersTable th, #usersTable td { padding:8px; }
@@ -136,16 +138,44 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
 <body>
 <div class="wrap">
   <div class="card">
-    <h2>KW Admin — Users</h2>
-    <div>Signed in as <b><?=htmlspecialchars($_SERVER['PHP_AUTH_USER'])?></b>. · <a href="../site/">View Dashboard</a> · <a href="phones.php">Phones</a> · <a href="photos.php">Photos</a> · <a href="users.php">Users</a> · <a href="../api/lifetime.php">Lifetime JSON</a> · <a href="admin.php">Admin</a></div>
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="kicker">Kings Walk Week</div>
+        <h1>Users</h1>
+      </div>
+      <div class="row" style="gap:8px">
+        <a class="btn" href="index.php">Home</a>
+        <a class="btn" href="weeks.php">Weeks</a>
+        <a class="btn" href="entries.php">Entries</a>
+        <a class="btn" href="users.php">Users</a>
+        <a class="btn" href="ai.php">AI</a>
+        <a class="btn" href="phones.php">Phones</a>
+        <a class="btn" href="photos.php">Photos</a>
+        <a class="btn" href="../site/">Dashboard</a>
+      </div>
+    </div>
     <?php if($info): ?><div class="ok"><?=$info?></div><?php endif; ?>
     <?php if($err): ?><div class="err"><?=$err?></div><?php endif; ?>
   </div>
 
   <div class="card">
-    <h3>Users</h3>
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <h3 style="margin:0">Users</h3>
+      <div class="row">
+        <label>Week:
+          <select id="weekSelect" onchange="onWeekChange()">
+            <?php foreach ($weeks as $w): ?>
+              <option value="<?= htmlspecialchars($w['week']) ?>" <?= ($w['week'] === ($curWeek ?? '') ? 'selected' : '') ?>>
+                <?= htmlspecialchars($w['label']) ?><?= !empty($w['finalized']) ? ' (finalized)' : '' ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      </div>
+    </div>
     <form method="post" class="row" style="margin-bottom:8px">
       <input type="hidden" name="action" value="create_user" />
+      <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
       <label>Name: <input name="u_name" required placeholder="Name"></label>
       <label>Sex: <input name="u_sex" style="width:60px" placeholder=""></label>
       <label>Age: <input type="number" min="0" name="u_age" style="width:70px" placeholder=""></label>
@@ -159,12 +189,12 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
       <form method="post" id="bulkAddForm" style="display:inline;margin-right:8px">
         <input type="hidden" name="action" value="bulk_add_selected_users" />
         <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
         <button class="btn" type="submit">Add selected to week</button>
       </form>
-      <!-- Keep the "Add all active" UX here but submit to admin.php which owns the add_all_active_to_week handler -->
-      <form method="post" action="admin.php" style="display:inline">
-        <input type="hidden" name="action" value="add_all_active_to_week" />
+      <form method="post" action="../api/entries_add_active.php" style="display:inline">
         <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
         <button class="btn" type="submit">Add all active to week</button>
       </form>
     </div>
@@ -179,6 +209,7 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
           <form method="post" style="display:contents">
             <input type="hidden" name="action" value="update_user" />
             <input type="hidden" name="u_id" value="<?=$u['id']?>" />
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
             <td><input name="u_name" value="<?=htmlspecialchars($u['name'])?>" required></td>
             <td><input name="u_sex" value="<?=htmlspecialchars((string)$u['sex'])?>" style="width:60px"></td>
             <td><input type="number" min="0" name="u_age" value="<?=htmlspecialchars((string)$u['age'])?>" style="width:70px"></td>
@@ -215,6 +246,8 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
     <?php endif; ?>
   </div>
 
+  </div>
+
 </div>
 <?php } catch (Throwable $e) {
   http_response_code(500);
@@ -224,6 +257,13 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
 } ?>
 <script>
 (function(){
+  function currentWeek(){ const sel=document.getElementById('weekSelect'); return sel? sel.value : '<?= htmlspecialchars($curWeek) ?>'; }
+  window.onWeekChange = function(){
+    const w = currentWeek();
+    const url = new URL(window.location.href);
+    url.searchParams.set('week', w);
+    window.location.href = url.toString();
+  };
   const q = document.getElementById('userSearch');
   const tbl = document.getElementById('usersTable');
   const chkAll = document.getElementById('chkAll');
@@ -272,6 +312,10 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
         alert('Select at least one user.');
         return;
       }
+      // ensure hidden week input matches selector
+      const w = currentWeek();
+      const weekInput = bulkForm.querySelector('input[name="week"]');
+      if (weekInput) weekInput.value = w;
       checked.forEach(id=>{
         const h = document.createElement('input');
         h.type = 'hidden'; h.name = 'user_ids[]'; h.value = id;

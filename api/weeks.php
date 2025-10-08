@@ -63,11 +63,21 @@ try {
     // sort desc by starts_on
     $out = array_values($map);
     usort($out, function($a,$b){ return strcmp($b['starts_on'], $a['starts_on']); });
+    // Back-compat: include 'week' field expected by older clients
+    foreach ($out as &$w) { $w['week'] = $w['starts_on']; }
+    unset($w);
     echo json_encode(['ok'=>true, 'weeks'=>$out], JSON_UNESCAPED_SLASHES);
     return;
   }
 
   if ($method === 'POST') {
+    // Admin-only with CSRF
+    require_once __DIR__ . '/lib/admin_auth.php';
+    require_admin();
+    if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+    require_once __DIR__ . '/../app/Security/Csrf.php';
+    $csrf = $_SERVER['HTTP_X_CSRF'] ?? ($_POST['csrf'] ?? '');
+    if (!\App\Security\Csrf::validate((string)$csrf)) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'invalid_csrf']); return; }
     $action = $_POST['action'] ?? '';
     if ($action === 'create') {
       $raw = (string)($_POST['date'] ?? '');

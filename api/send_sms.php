@@ -1,5 +1,8 @@
 <?php
 declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
 require __DIR__.'/lib/env.php';
 require __DIR__.'/util.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -48,14 +51,18 @@ if ($code===201 && $resp) {
   $sidResp = $j['sid'] ?? null;
 }
 $auditParams = [ $to, $body, $code, $sidResp, $err ?: (($code===201)?null:($resp ?: null)) ];
-for ($i = 0; $i < 5; $i++) {
-  try { $ins->execute($auditParams); break; }
-  catch (PDOException $e) {
-    $m = $e->getMessage();
-    if (stripos($m, 'locked') !== false || stripos($m, 'SQLITE_BUSY') !== false) { usleep(200000); continue; }
-    throw $e;
+
+// Use the same file-lock used elsewhere to serialize long-running audit writes
+with_file_lock(__DIR__ . '/../data/sqlite.write.lock', function() use ($ins, $auditParams) {
+  for ($i = 0; $i < 5; $i++) {
+    try { $ins->execute($auditParams); break; }
+    catch (PDOException $e) {
+      $m = $e->getMessage();
+      if (stripos($m, 'locked') !== false || stripos($m, 'SQLITE_BUSY') !== false) { usleep(200000); continue; }
+      throw $e;
+    }
   }
-}
+});
 
 if ($code===201) { echo json_encode(['ok'=>true,'sid'=>$sidResp]); }
 else { http_response_code(502); echo json_encode(['error'=>'twilio_failed','code'=>$code,'detail'=>$err ?: $resp]); }

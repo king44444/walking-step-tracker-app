@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
-require __DIR__ . '/db.php';
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/../vendor/autoload.php';
+App\Core\Env::bootstrap(dirname(__DIR__));
+use App\Config\DB;
+$pdo = DB::pdo();
 header('Content-Type: application/json; charset=utf-8');
 
 try {

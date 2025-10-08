@@ -6,6 +6,9 @@
 
 declare(strict_types=1);
 
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
 $dbFile = __DIR__ . '/../data/walkweek.sqlite';
 $authToken = getenv('TWILIO_AUTH_TOKEN') ?: '';
 

@@ -1,4 +1,6 @@
 <?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
 require_once __DIR__ . '/util.php';  // provides pdo()
 
 header('Content-Type: application/json');

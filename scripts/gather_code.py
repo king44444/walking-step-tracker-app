@@ -22,8 +22,8 @@ import logging
 __version__ = "1.1.0"
 
 # default extensions and directories to skip
-DEFAULT_EXTS = [".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".yml", ".yaml", ".html", ".htm"]
-DEFAULT_SKIP_DIRS = {".git", "__pycache__", "venv", ".venv", "env", ".env", "node_modules", "dist", "build", ".idea", ".vscode", "tmp", "temp", "cache", "logs", "log", ".cache", ".logs", ".next", ".nuxt", ".svelte-kit", ".turbo", ".vite", ".parcel-cache", ".rollup.cache", ".pnpm-store", ".yarn", ".yalc", "coverage", ".nyc_output", "storybook-static", ".vercel", "out"}
+DEFAULT_EXTS = [".py", ".php", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".yml", ".yaml", ".html", ".htm"]
+DEFAULT_SKIP_DIRS = {".git", "backup", "__pycache__", "venv", ".venv", "env", ".env", "node_modules", "vendor", "dist", "build", ".idea", ".vscode", "tmp", "temp", "cache", "logs", "log", ".cache", ".logs", ".next", ".nuxt", ".svelte-kit", ".turbo", ".vite", ".parcel-cache", ".rollup.cache", ".pnpm-store", ".yarn", ".yalc", "coverage", ".nyc_output", "storybook-static", ".vercel", "out", "public", "assets", "_bak"}
 DEFAULT_SKIP_FILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"}
 
 def parse_args():

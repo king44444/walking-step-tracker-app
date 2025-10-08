@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOCAL_ROOT="/Users/michaelking/Documents/projects/king-walk-week"
+#PI_HOST="piwebserver.local"
+PI_HOST="192.168.0.103"
+PI_USER="mike"
+REMOTE_ROOT="/var/www/public_html/dev/html/walk"
+WEB_USER="www-data"
+
+TS=$(date -u +"%Y%m%dT%H%M%SZ")
+BACKUP_DIR="${LOCAL_ROOT}/backup"
+mkdir -p "${BACKUP_DIR}"
+BACKUP_TAR="${BACKUP_DIR}/data-backup-${TS}.tar.gz"
+BACKUP_TMP="${BACKUP_DIR}/data-backup-${TS}"
+
+echo "Backing up remote data to ${BACKUP_TAR}..."
+# Stream a tar of the remote data dir; fall back to rsync if sudo tar fails.
+rm -f "${BACKUP_TAR}"
+rm -rf "${BACKUP_TMP}"
+if ssh "${PI_USER}@${PI_HOST}" "sudo mkdir -p '${REMOTE_ROOT}/data' && sudo tar -C '${REMOTE_ROOT}' -czf - data" > "${BACKUP_TAR}" 2>/dev/null; then
+  echo "Backup created: ${BACKUP_TAR}"
+else
+  echo "Remote sudo tar failed; falling back to rsync pull..."
+  if rsync -avz --rsync-path="sudo rsync" "${PI_USER}@${PI_HOST}:${REMOTE_ROOT}/data/" "${BACKUP_TMP}/"; then
+    echo "Rsync (sudo) pull succeeded"
+  else
+    echo "Rsync (sudo) failed; trying plain rsync pull"
+    if ! rsync -avz "${PI_USER}@${PI_HOST}:${REMOTE_ROOT}/data/" "${BACKUP_TMP}/"; then
+      echo "All backup methods failed. Aborting deploy."
+      exit 1
+    fi
+  fi
+  tar -C "${BACKUP_DIR}" -czf "${BACKUP_TAR}" "$(basename "${BACKUP_TMP}")"
+  echo "Backup created (rsync fallback): ${BACKUP_TAR}"
+fi
+
+# Verify backup file exists and is non-empty
+if [ ! -s "${BACKUP_TAR}" ]; then
+  echo "Backup file ${BACKUP_TAR} not created or empty. Aborting."
+  exit 1
+fi
+
+echo "Syncing files (excluding live DB)..."
+rsync -avz --delete \
+  --rsync-path="sudo rsync" \
+  --exclude '.git' \
+  --exclude '.DS_Store' \
+  --exclude 'site/_bak' \
+  --exclude 'backup/' \
+  --exclude 'data/' \
+  "${LOCAL_ROOT}/" "${PI_USER}@${PI_HOST}:${REMOTE_ROOT}/"
+
+echo "Ensure api/data -> ../data symlink and data dir exists..."
+ssh "${PI_USER}@${PI_HOST}" "sudo bash -lc '
+  cd \"${REMOTE_ROOT}\"
+  # Ensure data dir exists and has correct ownership
+  mkdir -p data
+  chown -R ${WEB_USER}:${WEB_USER} data || true
+  # Replace any non-symlink api/data with a symlink
+  if [ -e api/data ] && [ ! -L api/data ]; then
+    rm -rf api/data
+  fi
+  ln -sfn ../data api/data
+'"
+
+echo "Fix permissions on data dir, DB and deployed scripts..."
+ssh "${PI_USER}@${PI_HOST}" "bash -lc '
+  sudo chown -R ${WEB_USER}:${WEB_USER} \"${REMOTE_ROOT}/data\" || true
+  sudo find \"${REMOTE_ROOT}/data\" -type d -exec chmod 775 {} \; || true
+  if [ -f \"${REMOTE_ROOT}/data/walkweek.sqlite\" ]; then
+    sudo chmod 664 \"${REMOTE_ROOT}/data/walkweek.sqlite\"
+  fi
+
+  # Make deployed shell scripts executable
+  if [ -d \"${REMOTE_ROOT}/scripts\" ]; then
+    sudo find \"${REMOTE_ROOT}/scripts\" -type f -name \"*.sh\" -exec chmod a+x {} \; || true
+  fi
+
+  # Make api helper python scripts executable
+  if [ -d \"${REMOTE_ROOT}/api\" ]; then
+    sudo find \"${REMOTE_ROOT}/api\" -type f -name \"*.py\" -exec chmod a+x {} \; || true
+  fi
+'"
+
+echo "Restart php-fpm..."
+ssh "${PI_USER}@${PI_HOST}" "sudo systemctl restart php8.2-fpm"
+
+# Optional diagnostics (no migration on deploy)
+echo
+echo "DB pragmas (via PHP):"
+curl -sS "http://${PI_HOST}/dev/html/walk/api/db_diag.php" || true
+echo
+echo "Weeks JSON:"
+curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
+echo
+echo "Backup saved at: ${BACKUP_TAR}"
+echo "Done."

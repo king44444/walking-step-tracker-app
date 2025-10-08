@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
+/**
 /**
  * Diagnostic endpoint for Twilio signature verification.
  * Only active when TWILIO_SIG_DEBUG=== '1'.
@@ -18,8 +22,9 @@ declare(strict_types=1);
  */
 
 if (getenv('TWILIO_SIG_DEBUG') !== '1') {
+  header('Content-Type: application/json; charset=utf-8');
   http_response_code(404);
-  echo 'Not found';
+  echo json_encode(['error' => 'not_found']);
   exit;
 }
 
@@ -28,8 +33,9 @@ $diagHeader = $_SERVER['HTTP_X_DIAG_TOKEN'] ?? '';
 $diagToken = getenv('TWILIO_DIAG_TOKEN') ?: '';
 
 if (!$once && ($diagToken === '' || $diagHeader !== $diagToken)) {
+  header('Content-Type: application/json; charset=utf-8');
   http_response_code(403);
-  echo 'Forbidden';
+  echo json_encode(['error' => 'forbidden']);
   exit;
 }
 

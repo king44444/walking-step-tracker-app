@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
 /**
  * Build the URL Twilio would have seen for signature verification.
  * Uses X-Forwarded headers when present (for Cloudflare / proxies).
