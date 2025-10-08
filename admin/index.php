@@ -56,6 +56,13 @@ try {
   <script>
   // CSRF token injected from server
   const CSRF = "<?= htmlspecialchars($csrf) ?>";
+  async function freshCsrf(){
+    try {
+      const r = await fetch('../api/csrf_token.php', { cache: 'no-store' });
+      const j = await r.json();
+      return (j && j.token) ? String(j.token) : CSRF;
+    } catch(e) { return CSRF; }
+  }
   // Small helper for form POSTs (x-www-form-urlencoded)
   async function postForm(url, params) {
     const body = new URLSearchParams(params || {});
@@ -356,7 +363,8 @@ try {
     if (!uid || !kind || !val) { alert('Enter user_id, kind, and milestone'); return; }
     status.textContent = 'Generating…';
     try {
-      const res = await fetch(base+'api/award_generate.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ user_id: uid, kind, milestone_value: val, force }) });
+      const tk = await freshCsrf();
+      const res = await fetch(base+'api/award_generate.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body: JSON.stringify({ user_id: uid, kind, milestone_value: val, force }) });
       const j = await res.json();
       if (j && j.ok && j.skipped) { status.textContent = 'Skipped: ' + (j.reason||''); return; }
       if (j && j.ok) { status.textContent = 'OK: ' + (j.path||''); return; }
@@ -369,7 +377,8 @@ try {
     status.textContent = 'Regenerating missing…';
     try {
       const body = (kind && kind !== 'custom') ? JSON.stringify({ kind }) : JSON.stringify({});
-      const res = await fetch(base+'api/award_regen_missing.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body });
+      const tk = await freshCsrf();
+      const res = await fetch(base+'api/award_regen_missing.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body });
       const j = await res.json();
       if (j && j.ok) { status.textContent = `Generated: ${j.generated||0}, errors: ${j.errors||0}`; return; }
       status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
@@ -382,15 +391,18 @@ try {
     const model = sel.value || '';
     const status = document.getElementById('awStatus');
     if (!model) { alert('Pick a model first'); return; }
-    const r = await postForm(base+'api/set_setting.php', { key:'ai.image.model', value: model });
-    const j = await r.json; if (j && j.ok===false) { status.textContent = 'Save failed'; return; }
+    const tk = await freshCsrf();
+    const res = await fetch(base+'api/set_setting.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF':tk}, body: new URLSearchParams({ key:'ai.image.model', value: model, csrf: tk })});
+    let j=null; try{ j=await res.json(); }catch(e){}
+    if (!res.ok || (j && j.ok===false)) { status.textContent = 'Save failed'; return; }
     status.textContent = 'Image model saved: ' + model;
   });
   document.getElementById('awModelRefreshBtn').addEventListener('click', async ()=>{
     const status = document.getElementById('awStatus');
     status.textContent = 'Refreshing models…';
     try {
-      const res = await fetch(base+'api/ai_models_refresh.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({}) });
+      const tk = await freshCsrf();
+      const res = await fetch(base+'api/ai_models_refresh.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body: JSON.stringify({}) });
       const j = await res.json();
       if (!j || !j.ok) { status.textContent = 'Refresh failed'; return; }
       status.textContent = `Model list updated (${j.count||0})`;
