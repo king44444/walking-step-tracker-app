@@ -10,6 +10,7 @@ require __DIR__.'/lib/twilio.php';
 require __DIR__.'/lib/config.php';
 require __DIR__.'/lib/ai_sms.php';
 require __DIR__.'/lib/outbound.php';
+require __DIR__.'/lib/settings.php';
 // Content-Type set dynamically below (JSON for internal/testing, TwiML for Twilio)
 
 $secret = env('INTERNAL_API_SECRET','');
@@ -112,7 +113,7 @@ Tx::with(function(\PDO $pdo) use ($week, $name, $dayCol, $steps) {
 });
 $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
 
-$aiOn = get_setting('ai_enabled');
+$aiOn = setting_get('ai.enabled', '1');
 if ($aiOn === '1') {
   // Rate limit per user: 1 gen / 2 minutes
   try {

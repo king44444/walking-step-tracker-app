@@ -106,6 +106,12 @@ $SITE_ASSETS = '../site/assets';
         <button class="btn" id="toggleAiBtn">Toggle</button>
       </div>
       <div class="row" style="margin-bottom:8px">
+        <label><input type="checkbox" id="aiNudgeChk"> Nudge</label>
+        <label><input type="checkbox" id="aiRecapChk"> Recap</label>
+        <label><input type="checkbox" id="aiAwardChk"> Award</label>
+        <button class="btn" id="saveCatsBtn">Save</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
         <label>Model:
           <select id="aiModelSel">
             <option value="anthropic/claude-3.5-sonnet">anthropic/claude-3.5-sonnet</option>
@@ -229,9 +235,17 @@ $SITE_ASSETS = '../site/assets';
     st.textContent = 'Loading AI settings…';
     try {
       const g = async (key) => { const r = await fetch(base+'api/get_setting.php?key='+encodeURIComponent(key)); const j = await r.json(); return (j && j.value != null) ? String(j.value) : ''; };
-      const ai = await g('ai_enabled');
-      badge.textContent = 'AI: ' + (ai==='1' ? 'ON' : 'OFF');
-      badge.style.borderColor = ai==='1' ? 'rgba(122, 255, 180, 0.35)' : 'rgba(255,255,255,0.15)';
+      const flags = await (await fetch(base+'api/settings_get.php')).json();
+      const ai = flags['ai.enabled'] ? '1' : '0';
+      badge.textContent = 'AI: ' + (flags['ai.enabled'] ? 'ON' : 'OFF');
+      badge.style.borderColor = flags['ai.enabled'] ? 'rgba(122, 255, 180, 0.35)' : 'rgba(255,255,255,0.15)';
+      const nChk = document.getElementById('aiNudgeChk');
+      const rChk = document.getElementById('aiRecapChk');
+      const aChk = document.getElementById('aiAwardChk');
+      nChk.checked = !!flags['ai.nudge.enabled'];
+      rChk.checked = !!flags['ai.recap.enabled'];
+      aChk.checked = !!flags['ai.award.enabled'];
+      nChk.disabled = rChk.disabled = aChk.disabled = !flags['ai.enabled'];
       const model = await g('openrouter_model');
       if (model) document.getElementById('aiModelSel').value = model;
       const autosend = await g('ai_autosend');
@@ -242,11 +256,9 @@ $SITE_ASSETS = '../site/assets';
 
   async function toggleAi(){
     try {
-      const r = await fetch(base+'api/get_setting.php?key=ai_enabled');
-      const j = await r.json();
-      const cur = (j && j.value === '1') ? '1' : '0';
-      const next = cur === '1' ? '0' : '1';
-      await postForm(base+'api/set_setting.php', { key:'ai_enabled', value: next });
+      const flags = await (await fetch(base+'api/settings_get.php')).json();
+      const next = !flags['ai.enabled'];
+      await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ key:'ai.enabled', value: next, csrf: CSRF }) });
       await loadAi();
     } catch(e) { alert('Toggle failed'); }
   }
@@ -264,6 +276,16 @@ $SITE_ASSETS = '../site/assets';
   document.getElementById('toggleAiBtn').addEventListener('click', toggleAi);
   document.getElementById('saveModelBtn').addEventListener('click', saveModel);
   document.getElementById('saveAutosendBtn').addEventListener('click', saveAutosend);
+  document.getElementById('saveCatsBtn').addEventListener('click', async ()=>{
+    const CSRF = "<?= htmlspecialchars($csrf) ?>";
+    const sset = async (key,val)=>{
+      await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ key, value: !!val, csrf: CSRF }) });
+    };
+    await sset('ai.nudge.enabled', document.getElementById('aiNudgeChk').checked);
+    await sset('ai.recap.enabled', document.getElementById('aiRecapChk').checked);
+    await sset('ai.award.enabled', document.getElementById('aiAwardChk').checked);
+    await loadAi();
+  });
 
   async function loadAiLog(){
     const el = document.getElementById('aiLog');

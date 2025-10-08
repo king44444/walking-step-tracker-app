@@ -12,6 +12,7 @@ try {
   $pdo = DB::pdo();
   ob_start(); require_once __DIR__ . '/migrate.php'; ob_end_clean();
   require_once __DIR__ . '/lib/admin_auth.php';
+  require_once __DIR__ . '/lib/settings.php';
   require_admin();
   if (session_status() !== PHP_SESSION_ACTIVE) session_start();
   require_once __DIR__ . '/../app/Security/Csrf.php';
@@ -27,6 +28,12 @@ try {
     echo json_encode(['error' => 'POST required']);
     exit;
   }
+
+  // Global/category flags
+  $globalOn = setting_get('ai.enabled', '1') === '1';
+  $nudgeOn  = setting_get('ai.nudge.enabled', '1') === '1';
+  $recapOn  = setting_get('ai.recap.enabled', '1') === '1';
+  if (!$globalOn) { error_log('[ai] skipped category=all reason=ai.disabled'); echo json_encode(['ok'=>true,'skipped'=>true,'reason'=>'ai.disabled']); exit; }
 
   $week = trim((string)($_POST['week'] ?? ''));
   if ($week === '') {
@@ -127,12 +134,15 @@ try {
 
   $updateStmt = $pdo->prepare("UPDATE ai_messages SET content = :content WHERE id = :id");
 
-  $updated = 0;
+  $updated = 0; $skipped = 0;
   foreach ($rows as $r) {
     $id = (int)$r['id'];
     $type = (string)$r['type'];
     $user_id = $r['user_id'] !== null ? (int)$r['user_id'] : null;
     $content = '';
+
+    if ($type === 'nudge' && !$nudgeOn) { $skipped++; error_log('[ai] skipped category=nudge reason=nudge.disabled id='.$id.' week='.$week); continue; }
+    if ($type === 'recap' && !$recapOn) { $skipped++; error_log('[ai] skipped category=recap reason=recap.disabled id='.$id.' week='.$week); continue; }
 
     if ($type === 'nudge' && $user_id !== null && isset($users[$user_id])) {
       $name = $users[$user_id]['name'] ?? 'You';
@@ -229,7 +239,7 @@ try {
     $updated++;
   }
 
-  echo json_encode(['updated'=>$updated, 'week'=>$week]);
+  echo json_encode(['ok'=>true,'updated'=>$updated, 'skipped'=>$skipped, 'week'=>$week]);
 
 } catch (Throwable $e) {
   http_response_code(500);

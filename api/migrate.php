@@ -257,8 +257,18 @@ $pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_awards_user ON ai_awards(user_id);
 // Prompt 1 — Add AI toggle field support via `settings` table
 try {
   $pdo->exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
-  // Seed ai_enabled to '0' if missing
-  $pdo->exec("INSERT OR IGNORE INTO settings(key, value) VALUES('ai_enabled','0')");
+  // Add updated_at column if missing
+  try {
+    $cols = $pdo->query("PRAGMA table_info(settings)")->fetchAll(PDO::FETCH_ASSOC);
+    $names = array_map(fn($c)=>$c['name']??'', $cols);
+    if (!in_array('updated_at', $names, true)) { $pdo->exec("ALTER TABLE settings ADD COLUMN updated_at TEXT"); }
+  } catch (Throwable $e) {}
+  // Seed keys if missing
+  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai_enabled','0',datetime('now'))");
+  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.enabled','1',datetime('now'))");
+  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.nudge.enabled','1',datetime('now'))");
+  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.recap.enabled','1',datetime('now'))");
+  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.award.enabled','1',datetime('now'))");
 } catch (Throwable $e) {
   error_log('migrate.php: settings table setup failed: ' . $e->getMessage());
 }

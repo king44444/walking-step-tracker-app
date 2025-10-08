@@ -57,6 +57,12 @@ $csrf = \App\Security\Csrf::token();
       <button class="btn" id="toggleAiBtn">Toggle</button>
     </div>
     <div class="row" style="margin-bottom:8px">
+      <label><input type="checkbox" id="aiNudgeChk"> Nudge</label>
+      <label><input type="checkbox" id="aiRecapChk"> Recap</label>
+      <label><input type="checkbox" id="aiAwardChk"> Award</label>
+      <button class="btn" id="saveCatsBtn">Save Categories</button>
+    </div>
+    <div class="row" style="margin-bottom:8px">
       <label>Model:
         <select id="aiModelSel">
           <option value="anthropic/claude-3.5-sonnet">anthropic/claude-3.5-sonnet</option>
@@ -107,15 +113,25 @@ $csrf = \App\Security\Csrf::token();
 
   async function g(key){ const r = await fetch(base+'api/get_setting.php?key='+encodeURIComponent(key)); const j = await r.json(); return (j && j.value != null)? String(j.value) : ''; }
   async function set(key,value){ await fetch(base+'api/set_setting.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF':CSRF}, body: new URLSearchParams({ key, value, csrf: CSRF }) }); }
+  async function sget(){ const r = await fetch(base+'api/settings_get.php'); return await r.json(); }
+  async function sset(key,val){ await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ key, value: !!val, csrf: CSRF }) }); }
 
   async function loadAi(){
     const badge = document.getElementById('aiEnabledBadge');
     const st = document.getElementById('aiStatus');
     st.textContent = 'Loading…';
     try {
-      const ai = await g('ai_enabled');
-      badge.textContent = 'AI: ' + (ai==='1' ? 'ON' : 'OFF');
+      const flags = await sget();
+      const ai = flags['ai.enabled'] ? '1' : '0';
+      badge.textContent = 'AI: ' + (flags['ai.enabled'] ? 'ON' : 'OFF');
       badge.style.borderColor = ai==='1' ? 'rgba(122,255,180,0.35)' : 'rgba(255,255,255,0.15)';
+      const nChk = document.getElementById('aiNudgeChk');
+      const rChk = document.getElementById('aiRecapChk');
+      const aChk = document.getElementById('aiAwardChk');
+      nChk.checked = !!flags['ai.nudge.enabled'];
+      rChk.checked = !!flags['ai.recap.enabled'];
+      aChk.checked = !!flags['ai.award.enabled'];
+      nChk.disabled = rChk.disabled = aChk.disabled = !flags['ai.enabled'];
       const model = await g('openrouter_model');
       if (model) document.getElementById('aiModelSel').value = model;
       const autosend = await g('ai_autosend');
@@ -123,7 +139,16 @@ $csrf = \App\Security\Csrf::token();
       st.textContent = '';
     } catch(e) { st.textContent = 'Failed to load'; }
   }
-  document.getElementById('toggleAiBtn').addEventListener('click', async ()=>{ const cur = await g('ai_enabled'); await set('ai_enabled', cur==='1'?'0':'1'); await loadAi(); });
+  document.getElementById('toggleAiBtn').addEventListener('click', async ()=>{ const flags = await sget(); await sset('ai.enabled', !flags['ai.enabled']); await loadAi(); });
+  document.getElementById('saveCatsBtn').addEventListener('click', async ()=>{
+    const n = document.getElementById('aiNudgeChk').checked;
+    const r = document.getElementById('aiRecapChk').checked;
+    const a = document.getElementById('aiAwardChk').checked;
+    await sset('ai.nudge.enabled', n);
+    await sset('ai.recap.enabled', r);
+    await sset('ai.award.enabled', a);
+    await loadAi();
+  });
   document.getElementById('saveModelBtn').addEventListener('click', async ()=>{ const v=document.getElementById('aiModelSel').value; await set('openrouter_model', v); await loadAi(); });
   document.getElementById('saveAutosendBtn').addEventListener('click', async ()=>{ const v=document.getElementById('aiAutosendSel').value; await set('ai_autosend', v); await loadAi(); });
 
