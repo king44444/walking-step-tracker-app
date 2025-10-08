@@ -51,9 +51,9 @@ try {
   // Sort by name to keep stable
   usort($out, function($a,$b){ return strcasecmp($a['name'], $b['name']); });
 
-  // Save to public assets so admin can fetch it directly
+  // Save to data/models (writable on server) — admin fetches via api/ai_models_list.php
   $root = dirname(__DIR__);
-  $dir = $root . '/public/assets/models';
+  $dir = $root . '/data/models';
   if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
   $path = $dir . '/ai_image_models.json';
   $payload = [ 'updated_at' => date('c'), 'models' => $out ];
@@ -64,4 +64,3 @@ try {
 } catch (Throwable $e) {
   j200(['ok'=>false,'error'=>'server_error']);
 }
-

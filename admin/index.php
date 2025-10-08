@@ -402,7 +402,7 @@ try {
     const sel = document.getElementById('awModelSel');
     sel.innerHTML = '<option value="">Loading models…</option>';
     try {
-      const res = await fetch(base+'public/assets/models/ai_image_models.json' + (force ? ('?t=' + Date.now()) : ''), { cache: 'no-store' });
+      const res = await fetch(base+'api/ai_models_list.php' + (force ? ('?t=' + Date.now()) : ''), { cache: 'no-store' });
       const j = await res.json();
       const list = (j && Array.isArray(j.models)) ? j.models : [];
       if (!list.length) { sel.innerHTML = '<option value="">No image-capable models</option>'; return; }
