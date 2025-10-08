@@ -62,6 +62,10 @@ ssh "${PI_USER}@${PI_HOST}" "sudo bash -lc '
     rm -rf api/data
   fi
   ln -sfn ../data api/data
+  # Ensure site asset award directories exist and are writable by web user
+  mkdir -p site/assets/awards site/assets/users
+  chown -R ${WEB_USER}:${WEB_USER} site/assets/awards site/assets/users || true
+  find site/assets/awards site/assets/users -type d -exec chmod 775 {} \; || true
 '"
 
 echo "Fix permissions on data dir, DB and deployed scripts..."
