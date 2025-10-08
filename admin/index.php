@@ -174,6 +174,11 @@ try {
             <?php endforeach; ?>
           </select>
         </label>
+        <label>AI Model:
+          <select id="awModelSel"><option value="">Loading models…</option></select>
+        </label>
+        <button class="btn" id="awModelRefreshBtn" type="button">Update Model List</button>
+        <button class="btn" id="awModelSaveBtn" type="button">Save Image Model</button>
         <label>Kind:
           <select id="awKind">
             <option value="lifetime_steps">lifetime_steps</option>
@@ -339,6 +344,7 @@ try {
   loadWeeks();
   loadAi();
   loadAiLog();
+  loadImageModels();
 
   // --- Awards Images ---
   async function awardGenerate(){
@@ -371,6 +377,44 @@ try {
   }
   document.getElementById('awGenBtn').addEventListener('click', awardGenerate);
   document.getElementById('awRegenBtn').addEventListener('click', awardRegenMissing);
+  document.getElementById('awModelSaveBtn').addEventListener('click', async ()=>{
+    const sel = document.getElementById('awModelSel');
+    const model = sel.value || '';
+    const status = document.getElementById('awStatus');
+    if (!model) { alert('Pick a model first'); return; }
+    const r = await postForm(base+'api/set_setting.php', { key:'ai.image.model', value: model });
+    const j = await r.json; if (j && j.ok===false) { status.textContent = 'Save failed'; return; }
+    status.textContent = 'Image model saved: ' + model;
+  });
+  document.getElementById('awModelRefreshBtn').addEventListener('click', async ()=>{
+    const status = document.getElementById('awStatus');
+    status.textContent = 'Refreshing models…';
+    try {
+      const res = await fetch(base+'api/ai_models_refresh.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({}) });
+      const j = await res.json();
+      if (!j || !j.ok) { status.textContent = 'Refresh failed'; return; }
+      status.textContent = `Model list updated (${j.count||0})`;
+      await loadImageModels(true);
+    } catch(e) { status.textContent = 'Refresh failed'; }
+  });
+
+  async function loadImageModels(force){
+    const sel = document.getElementById('awModelSel');
+    sel.innerHTML = '<option value="">Loading models…</option>';
+    try {
+      const res = await fetch(base+'public/assets/models/ai_image_models.json' + (force ? ('?t=' + Date.now()) : ''), { cache: 'no-store' });
+      const j = await res.json();
+      const list = (j && Array.isArray(j.models)) ? j.models : [];
+      if (!list.length) { sel.innerHTML = '<option value="">No image-capable models</option>'; return; }
+      sel.innerHTML = list.map(m => `<option value="${m.id}">${m.name || m.id}</option>`).join('');
+      const r = await fetch(base+'api/get_setting.php?key='+encodeURIComponent('ai.image.model'));
+      const cur = await r.json();
+      const curVal = (cur && cur.value) ? String(cur.value) : '';
+      if (curVal) { sel.value = curVal; }
+    } catch(e) {
+      sel.innerHTML = '<option value="">Failed to load models</option>';
+    }
+  }
 })();
 </script>
 </body>
