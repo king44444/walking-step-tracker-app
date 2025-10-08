@@ -263,8 +263,7 @@ try {
     $names = array_map(fn($c)=>$c['name']??'', $cols);
     if (!in_array('updated_at', $names, true)) { $pdo->exec("ALTER TABLE settings ADD COLUMN updated_at TEXT"); }
   } catch (Throwable $e) {}
-  // Seed keys if missing
-  $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai_enabled','0',datetime('now'))");
+  // Seed canonical keys if missing
   $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.enabled','1',datetime('now'))");
   $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.nudge.enabled','1',datetime('now'))");
   $pdo->exec("INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES('ai.recap.enabled','1',datetime('now'))");

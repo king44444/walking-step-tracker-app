@@ -52,7 +52,7 @@ Core themes:
 Database objects relevant to AI (created by `api/migrate.php`):
 
 - `settings(key TEXT PRIMARY KEY, value TEXT)`
-  - Keys used: `ai_enabled` ('0'|'1'), `ai_autosend` ('0'|'1'), `openrouter_model` (string).
+- Keys used: `ai.enabled` ('0'|'1'), `ai.nudge.enabled`, `ai.recap.enabled`, `ai.award.enabled` (all boolean-like '0'/'1'); also `ai_autosend`, `openrouter_model`.
 
 - `ai_messages` (queue)
   - Columns: `id, type, scope_key, user_id, week, content, model, prompt_hash, approved_by, created_at, sent_at, provider, raw_json, cost_usd`.
@@ -74,14 +74,14 @@ Database objects relevant to AI (created by `api/migrate.php`):
   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` — for outbound SMS sending.
 
 - Admin-set via API
-  - `ai_enabled`, `ai_autosend`, `openrouter_model` (via `api/get_setting.php` / `api/set_setting.php`).
+- `ai.enabled` and per-category toggles via `api/settings_get.php` / `api/settings_set.php`; other legacy settings (e.g., `ai_autosend`, `openrouter_model`) via `api/get_setting.php` / `api/set_setting.php`.
 
 ## Data Flows
 
 1) Inbound SMS with optional AI reply
 - `POST /api/sms.php` (from Twilio or internal/test)
   - Parses message; records steps into `entries`.
-  - If `get_setting('ai_enabled') === '1'` and user’s `last_ai_at` is older than 120s:
+- If `setting_get('ai.enabled') === '1'` and user’s `last_ai_at` is older than 120s:
     - Builds prompt in `api/lib/ai_sms.php`.
     - Calls OpenRouter `chat/completions`.
     - Sanitizes and clamps reply to <= 240 chars.
@@ -103,8 +103,8 @@ Database objects relevant to AI (created by `api/migrate.php`):
 ## Gating, Rate Limits & Cost Controls
 
 - Gating
-  - AI is disabled by default: `ai_enabled` seeded to '0' in `migrate.php`.
-  - Live webhook checks `ai_enabled` per request.
+- AI global default is ON for the new key: `ai.enabled` seeded to '1'; per-category keys default ON as well.
+- Live webhook checks `ai.enabled` per request.
 
 - Per-user AI cooldown
   - `user_stats.last_ai_at` must be >= 120 seconds ago to generate another AI reply.
@@ -163,7 +163,7 @@ Database objects relevant to AI (created by `api/migrate.php`):
 
 ## Test & Tooling
 
-- `scripts/test_ai_flow.sh` — toggles `ai_enabled`, sends test SMS (`/api/sms.php`), fetches AI log. Requires Basic Auth and a `FROM=+1...` number.
+- `scripts/test_ai_flow.sh` — toggles `ai.enabled` via `api/settings_set.php`, sends test SMS (`/api/sms.php`), fetches AI log.
 
 - PHPUnit tests exist for the MVC layer (`tests/AIServiceTest.php`, `tests/AiMessageRepoTest.php`), but the UI uses the `api/*.php` layer. Tests do not validate OpenRouter integration or `api/*.php` endpoints.
 

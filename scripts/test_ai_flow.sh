@@ -49,14 +49,15 @@ echo "[test] BASE_URL=$BASE_URL FROM=$FROM"
 
 toggle() {
   val="$1"
+  # Use new settings endpoint
   curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" \
-    -H "X-CSRF: $CSRF" \
-    -d "csrf=$CSRF" -d "key=ai_enabled" -d "value=$val" \
-    "$BASE_URL/api/set_setting.php" >/dev/null
+    -H "Content-Type: application/json" -H "X-CSRF: $CSRF" \
+    -d "{\"key\":\"ai.enabled\",\"value\":$val,\"csrf\":\"$CSRF\"}" \
+    "$BASE_URL/api/settings_set.php" >/dev/null
 }
 
 get_setting() {
-  curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" "$BASE_URL/api/get_setting.php?key=ai_enabled"
+  curl -fsS -u "$ADMIN_USER:$ADMIN_PASS" "$BASE_URL/api/settings_get.php"
 }
 
 send_sms() {

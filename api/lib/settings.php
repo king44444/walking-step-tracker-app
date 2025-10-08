@@ -44,22 +44,8 @@ function setting_get(string $key, $default=null) {
   if (array_key_exists($key, $cache)) return $cache[$key];
   $pdo = settings_pdo();
   settings_ensure_schema($pdo);
-  // Legacy mapping for global toggle
-  if ($key === 'ai.enabled') {
-    // Prefer new key
-    $st = $pdo->prepare('SELECT value FROM settings WHERE key = :k LIMIT 1');
-    $st->execute([':k' => 'ai.enabled']);
-    $val = $st->fetchColumn();
-    if ($val === false) {
-      // Fallback to legacy key 'ai_enabled'
-      $st2 = $pdo->prepare('SELECT value FROM settings WHERE key = :k LIMIT 1');
-      $st2->execute([':k' => 'ai_enabled']);
-      $legacy = $st2->fetchColumn();
-      if ($legacy !== false) { $cache[$key] = $legacy; return $legacy; }
-    } else { $cache[$key] = $val; return $val; }
-    // ensure defaults exist
-    settings_seed_defaults($pdo);
-  }
+  // Ensure defaults exist
+  if ($key === 'ai.enabled') { settings_seed_defaults($pdo); }
   $st = $pdo->prepare('SELECT value FROM settings WHERE key = :k LIMIT 1');
   $st->execute([':k' => $key]);
   $val = $st->fetchColumn();
@@ -76,11 +62,5 @@ function setting_set(string $key, $value): void {
                        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')");
   $st->execute([':k'=>$key, ':v'=>(string)$value]);
   $cache[$key] = (string)$value;
-  if ($key === 'ai.enabled') {
-    // keep legacy in sync for compatibility with old clients/scripts
-    $st2 = $pdo->prepare("INSERT INTO settings(key,value,updated_at) VALUES('ai_enabled',:v,datetime('now'))
-                          ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')");
-    try { $st2->execute([':v'=>(string)$value]); } catch (Throwable $e) { /* ignore */ }
-  }
+  // No legacy key sync; new keys are canonical.
 }
-
