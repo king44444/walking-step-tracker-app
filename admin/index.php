@@ -15,6 +15,14 @@ $csrf = \App\Security\Csrf::token();
 // Optional for image paths shared with site
 $SITE_ASSETS = '../site/assets';
 
+// Load users for Awards Images selector
+$users = [];
+try {
+  $pdo = \App\Config\DB::pdo();
+  ob_start(); require_once __DIR__ . '/../api/migrate.php'; ob_end_clean();
+  $users = $pdo->query("SELECT id, name FROM users ORDER BY LOWER(name)")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) { $users = []; }
+
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -158,7 +166,14 @@ $SITE_ASSETS = '../site/assets';
     <div class="card">
       <h2>Awards Images</h2>
       <div class="row" style="margin-bottom:8px">
-        <label>User ID: <input id="awUserId" type="number" min="1" placeholder="123"></label>
+        <label>User:
+          <select id="awUserSel">
+            <option value="">Pick user…</option>
+            <?php foreach ($users as $u): ?>
+              <option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['name']) ?> (ID <?= (int)$u['id'] ?>)</option>
+            <?php endforeach; ?>
+          </select>
+        </label>
         <label>Kind:
           <select id="awKind">
             <option value="lifetime_steps">lifetime_steps</option>
@@ -327,7 +342,7 @@ $SITE_ASSETS = '../site/assets';
 
   // --- Awards Images ---
   async function awardGenerate(){
-    const uid = parseInt(document.getElementById('awUserId').value, 10) || 0;
+    const uid = parseInt(document.getElementById('awUserSel').value, 10) || 0;
     const kind = document.getElementById('awKind').value.trim();
     const val = parseInt(document.getElementById('awValue').value, 10) || 0;
     const force = document.getElementById('awForce').checked;
