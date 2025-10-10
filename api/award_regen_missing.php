@@ -29,18 +29,30 @@ try {
   $aw = (string)setting_get('ai.award.enabled', '1');
   if ($aw !== '1') { j200(['ok'=>true,'skipped'=>0,'generated'=>0,'errors'=>0,'reason'=>'award.disabled']); }
 
+  // Increase execution time for batch processing
+  set_time_limit(120);
+
   $raw = file_get_contents('php://input') ?: '';
   $j = json_decode($raw, true);
   if (!is_array($j)) { $j = $_POST ?: []; }
   $kindFilter = isset($j['kind']) ? (string)$j['kind'] : '';
+  $limit = isset($j['limit']) ? max(1, min((int)$j['limit'], 50)) : 10; // Default 10, max 50
 
   $pdo = DB::pdo();
   ob_start(); require_once __DIR__ . '/migrate.php'; ob_end_clean();
 
+  // First, get total count of missing images
+  $countSql = 'SELECT COUNT(*) FROM ai_awards a WHERE (a.image_path IS NULL OR a.image_path = "")';
+  $countParams = [];
+  if ($kindFilter !== '') { $countSql .= ' AND a.kind = :k'; $countParams[':k'] = $kindFilter; }
+  $stCount = $pdo->prepare($countSql); $stCount->execute($countParams);
+  $totalMissing = (int)$stCount->fetchColumn();
+
+  // Now fetch limited batch to process
   $sql = 'SELECT a.user_id, a.kind, a.milestone_value, u.name FROM ai_awards a JOIN users u ON u.id = a.user_id WHERE (a.image_path IS NULL OR a.image_path = "")';
   $params = [];
   if ($kindFilter !== '') { $sql .= ' AND a.kind = :k'; $params[':k'] = $kindFilter; }
-  $sql .= ' ORDER BY a.created_at ASC';
+  $sql .= ' ORDER BY a.created_at ASC LIMIT ' . $limit;
   $st = $pdo->prepare($sql); $st->execute($params);
   $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
@@ -62,7 +74,9 @@ try {
     } catch (Throwable $e) { $err++; }
   }
 
-  j200(['ok'=>true, 'generated'=>$gen, 'skipped'=>$skip, 'errors'=>$err]);
+  // Calculate remaining count after this batch
+  $remaining = max(0, $totalMissing - $gen - $err);
+  j200(['ok'=>true, 'generated'=>$gen, 'skipped'=>$skip, 'errors'=>$err, 'remaining'=>$remaining, 'total_missing'=>$totalMissing]);
 } catch (Throwable $e) {
   try {
     $dir = dirname(__DIR__) . '/data/logs/ai'; if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
@@ -70,4 +84,3 @@ try {
   } catch (Throwable $e2) {}
   j200(['ok'=>false,'error'=>'server_error']);
 }
-

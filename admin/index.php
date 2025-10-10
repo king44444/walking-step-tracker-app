@@ -375,15 +375,55 @@ try {
   async function awardRegenMissing(){
     const kind = document.getElementById('awKind').value.trim();
     const status = document.getElementById('awStatus');
-    status.textContent = 'Regenerating missing…';
+    const btn = document.getElementById('awRegenBtn');
+    
+    // Disable button during processing
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    
+    let totalGenerated = 0;
+    let totalErrors = 0;
+    let batchCount = 0;
+    
     try {
-      const body = (kind && kind !== 'custom') ? JSON.stringify({ kind }) : JSON.stringify({});
-      const tk = await freshCsrf();
-      const res = await fetch(base+'api/award_regen_missing.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body });
-      const j = await res.json();
-      if (j && j.ok) { status.textContent = `Generated: ${j.generated||0}, errors: ${j.errors||0}`; return; }
-      status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
-    } catch (e) { status.textContent = 'Error regenerating'; }
+      // Process in batches until all are complete
+      while (true) {
+        batchCount++;
+        status.textContent = `Processing batch ${batchCount}...`;
+        
+        const body = (kind && kind !== 'custom') ? JSON.stringify({ kind, limit: 10 }) : JSON.stringify({ limit: 10 });
+        const tk = await freshCsrf();
+        const res = await fetch(base+'api/award_regen_missing.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body });
+        const j = await res.json();
+        
+        if (!j || !j.ok) {
+          status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
+          break;
+        }
+        
+        totalGenerated += (j.generated || 0);
+        totalErrors += (j.errors || 0);
+        const remaining = j.remaining || 0;
+        const total = j.total_missing || 0;
+        
+        // Update status with progress
+        if (remaining > 0) {
+          status.textContent = `Progress: ${totalGenerated} generated, ${totalErrors} errors, ${remaining} remaining...`;
+          // Small delay between batches to avoid overwhelming the server
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+          // All done
+          status.textContent = `✓ Complete: ${totalGenerated} generated, ${totalErrors} errors (from ${total} missing)`;
+          break;
+        }
+      }
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    } finally {
+      // Re-enable button
+      btn.disabled = false;
+      btn.textContent = 'Regen Missing';
+    }
   }
   document.getElementById('awGenBtn').addEventListener('click', awardGenerate);
   document.getElementById('awRegenBtn').addEventListener('click', awardRegenMissing);
