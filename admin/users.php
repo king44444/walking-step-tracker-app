@@ -342,6 +342,7 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
       try {
         const resp = await fetch('../api/admin_users_export.php', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ csrf: KW_CSRF })
         });
@@ -381,6 +382,7 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
         if (!users || !Array.isArray(users)) { alert('JSON must be an array of users or an object with a "users" array.'); this.value=''; return; }
         const resp = await fetch('../api/admin_users_import.php', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ csrf: KW_CSRF, users: users })
         });
