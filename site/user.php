@@ -221,7 +221,7 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
               <?php endforeach; ?>
             </div>
 
-            <div class="w-full md:w-56 mt-4 md:mt-0 text-sm text-white/60">
+            <div class="w-full md:w-56 mt-6 md:mt-4 text-sm text-white/60">
               <div class="font-semibold text-white/80 mb-2">Legend</div>
               <?php foreach ($milestones as $m):
                 $steps = (int)$m['steps'];
