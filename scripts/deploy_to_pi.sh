@@ -48,6 +48,8 @@ rsync -avz --delete \
   --exclude '.DS_Store' \
   --exclude 'site/_bak' \
   --exclude 'backup/' \
+  --exclude 'site/assets/awards/' \
+  --exclude 'site/assets/users/' \
   --exclude 'data/' \
   "${LOCAL_ROOT}/" "${PI_USER}@${PI_HOST}:${REMOTE_ROOT}/"
 
