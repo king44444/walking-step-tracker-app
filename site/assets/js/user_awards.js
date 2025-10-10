@@ -156,7 +156,7 @@ function formatDate(isoDate) {
  * Handle broken images
  */
 function handleImageError(img) {
-  img.src = '/site/assets/awards/default/lifetime_default.svg';
+  img.src = 'assets/admin/no-photo.svg';
   img.onerror = null; // Prevent infinite loop
 }
 

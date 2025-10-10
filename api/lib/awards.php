@@ -43,8 +43,8 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
             'threshold' => $threshold,
             'earned' => $earned,
             'awarded_at' => null,
-            'image_url' => "/site/assets/awards/{$userId}/lifetime-{$threshold}.svg",
-            'thumb_url' => "/site/assets/awards/thumbs/{$userId}/lifetime-{$threshold}.svg",
+            'image_url' => "assets/awards/{$userId}/lifetime-{$threshold}.svg",
+            'thumb_url' => "assets/awards/thumbs/{$userId}/lifetime-{$threshold}.svg",
             'title' => format_threshold($threshold)
         ];
         
