@@ -110,11 +110,19 @@ $csrf = \App\Security\Csrf::token();
 (function(){
   const base = '../';
   const CSRF = "<?= htmlspecialchars($csrf) ?>";
+  
+  async function freshCsrf(){
+    try {
+      const r = await fetch(base+'api/csrf_token.php', { cache: 'no-store' });
+      const j = await r.json();
+      return (j && j.token) ? String(j.token) : CSRF;
+    } catch(e) { return CSRF; }
+  }
 
   async function g(key){ const r = await fetch(base+'api/get_setting.php?key='+encodeURIComponent(key)); const j = await r.json(); return (j && j.value != null)? String(j.value) : ''; }
   async function set(key,value){ await fetch(base+'api/set_setting.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF':CSRF}, body: new URLSearchParams({ key, value, csrf: CSRF }) }); }
   async function sget(){ const r = await fetch(base+'api/settings_get.php'); return await r.json(); }
-  async function sset(key,val){ await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ key, value: !!val, csrf: CSRF }) }); }
+  async function sset(key,val){ const tk = await freshCsrf(); await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body: JSON.stringify({ key, value: !!val, csrf: tk }) }); }
 
   async function loadAi(){
     const badge = document.getElementById('aiEnabledBadge');
