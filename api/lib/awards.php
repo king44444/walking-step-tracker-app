@@ -63,13 +63,9 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
     $imagePaths = [];
     while ($row = $imageStmt->fetch(PDO::FETCH_ASSOC)) {
         if (!empty($row['image_path'])) {
-            // image_path from ai_awards is like "awards/7/lifetime-steps-100000-20251010.webp"
-            // We need "assets/awards/7/..." for the site structure
-            $path = $row['image_path'];
-            if (strpos($path, 'awards/') === 0) {
-                $path = 'assets/' . $path;
-            }
-            $imagePaths[(int)$row['milestone_value']] = $path;
+            // Prefer the most recent award file on disk for this milestone (handles .webp vs .svg)
+            // Use find_award_image() to locate the newest matching file in the awards directory.
+            $imagePaths[(int)$row['milestone_value']] = find_award_image($userId, (int)$row['milestone_value']);
         }
     }
     
@@ -211,7 +207,9 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
 
 /**
  * Find the most recent award image for a user and threshold.
- * Award images are named like: lifetime-steps-100000-20251010.svg
+ * Award images are named like: lifetime-steps-100000-20251010.svg or .webp
+ * This function considers both .webp and .svg candidates and returns the newest file
+ * by modification time so regenerated webp files win over older svg files.
  * 
  * @param int $userId User ID
  * @param int $threshold Step threshold
@@ -219,32 +217,39 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
  */
 function find_award_image(int $userId, int $threshold): string {
     $awardsDir = __DIR__ . '/../../site/assets/awards/' . $userId;
-    $pattern = "lifetime-steps-{$threshold}-*.svg";
     
     // Check if directory exists
     if (!is_dir($awardsDir)) {
         return 'assets/admin/no-photo.svg';
     }
     
-    // Find all matching files
-    $files = glob($awardsDir . '/' . $pattern);
+    $patterns = [
+        "lifetime-steps-{$threshold}-*.webp",
+        "lifetime-steps-{$threshold}-*.svg"
+    ];
     
-    if (empty($files)) {
-        // Try webp format
-        $pattern = "lifetime-steps-{$threshold}-*.webp";
-        $files = glob($awardsDir . '/' . $pattern);
+    $candidates = [];
+    foreach ($patterns as $p) {
+        $matches = glob($awardsDir . '/' . $p);
+        if (!empty($matches)) {
+            foreach ($matches as $f) {
+                // Use file modification time as the tiebreaker; fall back to 0 if unavailable
+                $mtime = file_exists($f) ? filemtime($f) : 0;
+                $candidates[$f] = $mtime;
+            }
+        }
     }
     
-    if (empty($files)) {
+    if (empty($candidates)) {
         return 'assets/admin/no-photo.svg';
     }
     
-    // Sort by filename (date suffix) descending to get most recent
-    rsort($files);
+    // Sort candidates by modification time, newest first
+    arsort($candidates);
+    $bestFile = array_key_first($candidates);
     
     // Return relative path from site directory
-    $filename = basename($files[0]);
-    return "assets/awards/{$userId}/{$filename}";
+    return 'assets/awards/' . $userId . '/' . basename($bestFile);
 }
 
 /**
