@@ -247,11 +247,27 @@ try {
             <?php foreach ($awards as $a): ?>
               <tr>
                 <td>
-                  <?php if (!empty($a['image_path'])): ?>
-                    <img src="../site/<?= htmlspecialchars($a['image_path']) ?>" class="img-thumb" alt="Award" onerror="this.style.display='none'">
-                  <?php else: ?>
-                    <div class="img-thumb" style="background:rgba(255,255,255,0.05)"></div>
-                  <?php endif; ?>
+                  <?php
+                    $img = $a['image_path'] ?? '';
+                    if ($img) {
+                      if (preg_match('~^https?://~', $img)) {
+                        $src = $img;
+                      } else {
+                        // Normalize stored path and build a web path to site assets.
+                        $normalized = preg_replace('#^site/#', '', ltrim($img, '/'));
+                        if (strpos($normalized, 'assets/') === 0) {
+                          // already includes assets/ prefix
+                          $src = '../' . $normalized;
+                        } else {
+                          // common stored form: "awards/{uid}/file.webp" -> file is at site/assets/awards/...
+                          $src = '../site/assets/' . $normalized;
+                        }
+                      }
+                      echo '<img src="' . htmlspecialchars($src) . '" class="img-thumb" alt="Award" onerror="this.style.display=\\'none\\'">';
+                    } else {
+                      echo '<div class="img-thumb" style="background:rgba(255,255,255,0.05)"></div>';
+                    }
+                  ?>
                 </td>
                 <td><?= htmlspecialchars($a['name']) ?></td>
                 <td><span class="muted"><?= htmlspecialchars($a['kind']) ?></span></td>
@@ -396,13 +412,23 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
    location.reload();
  });
 
- // Delete award
- document.querySelectorAll('.delete-award-btn').forEach(btn => {
-   btn.addEventListener('click', async (e) => {
+ // Delegate delete and regen actions to the awardsTable for reliable event handling
+ document.getElementById('awardsTable').addEventListener('click', async (ev) => {
+   const btn = ev.target.closest('button');
+   if (!btn) return;
+
+   // Delete action
+   if (btn.classList.contains('delete-award-btn')) {
      const id = btn.getAttribute('data-id');
      if (!id) return;
      if (!confirm('Delete this award? This will remove the DB row and the generated image file (if present).')) return;
+
+     // Provide immediate UI feedback
+     const origText = btn.textContent;
+     btn.disabled = true;
+     btn.textContent = 'Deleting...';
      showStatus('Deleting award...');
+
      try {
        const tk = await freshCsrf();
        const res = await fetch(base + 'api/admin_delete_award.php', {
@@ -413,27 +439,35 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
        const j = await res.json();
        if (j && j.ok) {
          showStatus('✓ Deleted', 'ok');
-         // remove the row
          const row = btn.closest('tr');
          if (row) row.remove();
        } else {
          showStatus('✗ Error deleting award', 'err');
+         btn.disabled = false;
+         btn.textContent = origText;
        }
      } catch (err) {
        showStatus('✗ Error deleting award', 'err');
+       btn.disabled = false;
+       btn.textContent = origText;
      }
-   });
- });
+     return;
+   }
 
- // Regen award (force regenerate image)
- document.querySelectorAll('.regen-award-btn').forEach(btn => {
-   btn.addEventListener('click', async (e) => {
+   // Regen action (force regenerate image)
+   if (btn.classList.contains('regen-award-btn')) {
      const userId = btn.getAttribute('data-user');
      const kind = btn.getAttribute('data-kind');
      const val = btn.getAttribute('data-value');
      if (!userId || !kind || !val) return;
      if (!confirm('Regenerate the award image for this user and milestone?')) return;
+
+     // Immediate UI feedback
+     const origText = btn.textContent;
+     btn.disabled = true;
+     btn.textContent = 'Regenerating...';
      showStatus('Regenerating image...');
+
      try {
        const tk = await freshCsrf();
        const res = await fetch(base + 'api/award_generate.php', {
@@ -444,14 +478,37 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
        const j = await res.json();
        if (j && j.ok) {
          showStatus('✓ Regenerated', 'ok');
-         setTimeout(() => location.reload(), 1500);
+         // Refresh the row image (if present) or reload
+         const row = btn.closest('tr');
+         if (row) {
+           const imgEl = row.querySelector('.img-thumb');
+           if (imgEl) {
+             // Force reload by updating src if available in response.path
+             if (j.path) {
+               imgEl.src = '../' + j.path;
+               imgEl.style.display = '';
+             } else {
+               // fallback: reload page to reflect changes
+               setTimeout(() => location.reload(), 800);
+             }
+           } else {
+             setTimeout(() => location.reload(), 800);
+           }
+         } else {
+           setTimeout(() => location.reload(), 800);
+         }
        } else {
          showStatus('✗ Error regenerating image', 'err');
+         btn.disabled = false;
+         btn.textContent = origText;
        }
      } catch (err) {
        showStatus('✗ Error regenerating image', 'err');
+       btn.disabled = false;
+       btn.textContent = origText;
      }
-   });
+     return;
+   }
  });
 
 //
