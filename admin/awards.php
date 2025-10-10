@@ -1,0 +1,365 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+\App\Core\Env::bootstrap(dirname(__DIR__));
+require_once __DIR__ . '/../api/lib/admin_auth.php';
+require_admin();
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+$csrf = \App\Security\Csrf::token();
+
+// Load users and awards data
+$users = [];
+$awards = [];
+$stats = ['total' => 0, 'with_image' => 0, 'missing_image' => 0, 'errors' => 0];
+
+try {
+  $pdo = \App\Config\DB::pdo();
+  ob_start(); require_once __DIR__ . '/../api/migrate.php'; ob_end_clean();
+  
+  // Get all users
+  $users = $pdo->query("SELECT id, name FROM users ORDER BY LOWER(name)")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  
+  // Get all awards with user info
+  $awardsStmt = $pdo->query("
+    SELECT a.id, a.user_id, u.name, a.kind, a.milestone_value, a.image_path, a.created_at
+    FROM ai_awards a
+    JOIN users u ON u.id = a.user_id
+    WHERE a.kind IN ('lifetime_steps', 'attendance_weeks')
+    ORDER BY a.created_at DESC
+    LIMIT 100
+  ");
+  $awards = $awardsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  
+  // Calculate stats
+  $stats['total'] = count($awards);
+  foreach ($awards as $a) {
+    if (!empty($a['image_path'])) {
+      $stats['with_image']++;
+    } else {
+      $stats['missing_image']++;
+    }
+  }
+} catch (Throwable $e) {
+  $users = [];
+  $awards = [];
+}
+
+?><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Awards Admin - KW</title>
+  <link rel="icon" href="../favicon.ico" />
+  <style>
+    body { background:#0b1020; color:#e6ecff; font: 14px system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; }
+    .wrap { max-width: 1400px; margin: 24px auto; padding: 0 16px; }
+    .grid { display:grid; grid-template-columns: 1fr; gap:16px; }
+    @media (min-width: 920px){ .grid{ grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 1200px){ .grid-3{ grid-template-columns: 1fr 1fr 1fr; } }
+    .card { background:#0f1530; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; }
+    .hdr { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    .nav { display:flex; flex-wrap:wrap; gap:8px; }
+    .btn { padding:8px 12px; border-radius:8px; background:#1a2350; border:1px solid #2c3a7a; color:#e6ecff; cursor:pointer; font-size:13px; white-space:nowrap; }
+    .btn:hover { background:#1e2a5a; }
+    .btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn.primary { background:#2a4580; border-color:#3a5a9a; }
+    .btn.warn { background:#4d1a1a; border-color:#7a2c2c; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    label { display:flex; align-items:center; gap:6px; }
+    input, select { background:#111936; color:#e6ecff; border:1px solid #1e2a5a; border-radius:8px; padding:6px 8px; font-size:13px; }
+    input[type="checkbox"] { width:16px; height:16px; }
+    .muted { color: rgba(230,236,255,0.6); font-size: 12px; }
+    h1 { font-size: 24px; font-weight: 800; margin: 0; }
+    h2 { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
+    .badge { display:inline-block; padding:3px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.15); font-size:12px; font-weight:600; }
+    .badge.ok { background:rgba(124, 227, 161, 0.1); border-color:rgba(124, 227, 161, 0.3); color:#7ce3a1; }
+    .badge.warn { background:rgba(255, 187, 102, 0.1); border-color:rgba(255, 187, 102, 0.3); color:#ffbb66; }
+    .badge.err { background:rgba(255, 119, 153, 0.1); border-color:rgba(255, 119, 153, 0.3); color:#f79; }
+    table { width:100%; border-collapse: collapse; font-size:13px; }
+    th, td { padding:10px 8px; border-top:1px solid rgba(255,255,255,0.08); text-align:left; }
+    th { font-weight:600; color:rgba(230,236,255,0.8); }
+    tr:hover { background:rgba(255,255,255,0.02); }
+    .link { color:#9ecbff; text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+    .stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:12px; }
+    .stat-card { background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px; }
+    .stat-value { font-size:28px; font-weight:800; margin:4px 0; }
+    .stat-label { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:rgba(230,236,255,0.5); }
+    #status { margin-top:8px; padding:8px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); font-size:12px; }
+    .img-thumb { width:40px; height:40px; border-radius:6px; object-fit:cover; border:1px solid rgba(255,255,255,0.1); }
+    .full-width { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card hdr">
+    <div>
+      <h1>⭐ Awards Management</h1>
+      <div class="muted">Manage lifetime and attendance awards</div>
+    </div>
+    <div class="nav">
+      <a class="btn" href="index.php">← Admin Home</a>
+      <a class="btn" href="users.php">Users</a>
+      <a class="btn" href="ai.php">AI Console</a>
+      <a class="btn" href="../site/">View Dashboard</a>
+    </div>
+  </div>
+
+  <!-- Stats Overview -->
+  <div class="card full-width">
+    <h2>Statistics</h2>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Awards</div>
+        <div class="stat-value"><?= number_format($stats['total']) ?></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">With Images</div>
+        <div class="stat-value" style="color:#7ce3a1"><?= number_format($stats['with_image']) ?></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Missing Images</div>
+        <div class="stat-value" style="color:#ffbb66"><?= number_format($stats['missing_image']) ?></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Coverage</div>
+        <div class="stat-value" style="color:#9ecbff">
+          <?= $stats['total'] > 0 ? number_format(($stats['with_image'] / $stats['total']) * 100, 0) : 0 ?>%
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Generate Award -->
+    <div class="card">
+      <h2>Generate Award Image</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label style="flex:1">
+          User:
+          <select id="genUser" style="width:100%">
+            <option value="">Select user…</option>
+            <?php foreach ($users as $u): ?>
+              <option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label style="flex:1">
+          Kind:
+          <select id="genKind">
+            <option value="lifetime_steps">Lifetime Steps</option>
+            <option value="attendance_weeks">Attendance Weeks</option>
+          </select>
+        </label>
+        <label style="flex:1">
+          Milestone:
+          <input id="genValue" type="number" min="1" placeholder="100000" style="width:100%">
+        </label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="muted">
+          <input type="checkbox" id="genForce"> Force regenerate if exists
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="genBtn">Generate Image</button>
+      </div>
+    </div>
+
+    <!-- Batch Operations -->
+    <div class="card">
+      <h2>Batch Operations</h2>
+      <div class="row" style="margin-bottom:12px">
+        <label style="flex:1">
+          Filter by kind:
+          <select id="batchKind" style="width:100%">
+            <option value="">All kinds</option>
+            <option value="lifetime_steps">Lifetime Steps</option>
+            <option value="attendance_weeks">Attendance Weeks</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button class="btn primary" id="regenMissingBtn">Regenerate Missing Images</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button class="btn" id="clearCacheBtn">Clear Date Cache</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="refreshBtn">Refresh List</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Awards List -->
+  <div class="card full-width">
+    <h2>Recent Awards (last 100)</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Image</th>
+            <th>User</th>
+            <th>Kind</th>
+            <th>Milestone</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="awardsTable">
+          <?php if (empty($awards)): ?>
+            <tr><td colspan="7" class="muted" style="text-align:center">No awards found</td></tr>
+          <?php else: ?>
+            <?php foreach ($awards as $a): ?>
+              <tr>
+                <td>
+                  <?php if (!empty($a['image_path'])): ?>
+                    <img src="../site/<?= htmlspecialchars($a['image_path']) ?>" class="img-thumb" alt="Award" onerror="this.style.display='none'">
+                  <?php else: ?>
+                    <div class="img-thumb" style="background:rgba(255,255,255,0.05)"></div>
+                  <?php endif; ?>
+                </td>
+                <td><?= htmlspecialchars($a['name']) ?></td>
+                <td><span class="muted"><?= htmlspecialchars($a['kind']) ?></span></td>
+                <td><strong><?= number_format((int)$a['milestone_value']) ?></strong></td>
+                <td>
+                  <?php if (!empty($a['image_path'])): ?>
+                    <span class="badge ok">✓ Image</span>
+                  <?php else: ?>
+                    <span class="badge warn">⚠ Missing</span>
+                  <?php endif; ?>
+                </td>
+                <td class="muted"><?= date('M j, Y', strtotime($a['created_at'])) ?></td>
+                <td>
+                  <a href="../site/user.php?id=<?= (int)$a['user_id'] ?>" class="link" target="_blank">View Page</a>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Status Message -->
+  <div id="status" class="muted" style="display:none"></div>
+</div>
+
+<script>
+const CSRF = "<?= htmlspecialchars($csrf) ?>";
+const base = '../';
+
+function showStatus(msg, type = 'info') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.borderColor = type === 'ok' ? 'rgba(124, 227, 161, 0.3)' : 
+                         type === 'err' ? 'rgba(255, 119, 153, 0.3)' : 
+                         'rgba(255,255,255,0.06)';
+  setTimeout(() => el.style.display = 'none', 5000);
+}
+
+async function freshCsrf() {
+  try {
+    const r = await fetch(base + 'api/csrf_token.php', { cache: 'no-store' });
+    const j = await r.json();
+    return (j && j.token) ? String(j.token) : CSRF;
+  } catch(e) { return CSRF; }
+}
+
+// Generate single award
+document.getElementById('genBtn').addEventListener('click', async () => {
+  const uid = parseInt(document.getElementById('genUser').value, 10) || 0;
+  const kind = document.getElementById('genKind').value.trim();
+  const val = parseInt(document.getElementById('genValue').value, 10) || 0;
+  const force = document.getElementById('genForce').checked;
+  
+  if (!uid || !kind || !val) {
+    alert('Please select user, kind, and milestone');
+    return;
+  }
+  
+  showStatus('Generating image...');
+  try {
+    const tk = await freshCsrf();
+    const res = await fetch(base + 'api/award_generate.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
+      body: JSON.stringify({ user_id: uid, kind, milestone_value: val, force })
+    });
+    const j = await res.json();
+    
+    if (j && j.ok && j.skipped) {
+      showStatus('Skipped: ' + (j.reason || 'already exists'), 'info');
+    } else if (j && j.ok) {
+      showStatus('✓ Generated: ' + (j.path || ''), 'ok');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showStatus('✗ Error: ' + (j && j.error ? j.error : 'failed'), 'err');
+    }
+  } catch (e) {
+    showStatus('✗ Error generating image', 'err');
+  }
+});
+
+// Regenerate missing
+document.getElementById('regenMissingBtn').addEventListener('click', async () => {
+  const kind = document.getElementById('batchKind').value.trim();
+  
+  if (!confirm('Regenerate all missing award images' + (kind ? ' for ' + kind : '') + '?')) {
+    return;
+  }
+  
+  showStatus('Regenerating missing images...');
+  try {
+    const body = kind ? JSON.stringify({ kind }) : JSON.stringify({});
+    const tk = await freshCsrf();
+    const res = await fetch(base + 'api/award_regen_missing.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
+      body
+    });
+    const j = await res.json();
+    
+    if (j && j.ok) {
+      showStatus(`✓ Generated: ${j.generated || 0}, Errors: ${j.errors || 0}`, 'ok');
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      showStatus('✗ Error: ' + (j && j.error ? j.error : 'failed'), 'err');
+    }
+  } catch (e) {
+    showStatus('✗ Error regenerating', 'err');
+  }
+});
+
+// Clear cache
+document.getElementById('clearCacheBtn').addEventListener('click', async () => {
+  if (!confirm('Clear all cached award dates? This will force recalculation next time dates are requested.')) {
+    return;
+  }
+  
+  showStatus('Clearing cache...');
+  try {
+    const tk = await freshCsrf();
+    const res = await fetch(base + 'api/migrate.php', { cache: 'no-store' });
+    await res.text();
+    
+    // Delete from cache table (we'd need a dedicated endpoint, but for now just inform)
+    showStatus('⚠ Cache clear requires database access - use SQL: DELETE FROM user_awards_cache', 'info');
+  } catch (e) {
+    showStatus('✗ Error clearing cache', 'err');
+  }
+});
+
+// Refresh page
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  location.reload();
+});
+</script>
+</body>
+</html>
