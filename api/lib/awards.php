@@ -127,6 +127,12 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
     $dailySteps = [];
     foreach ($entries as $entry) {
         $weekStart = $entry['starts_on'];
+        
+        // Skip entries without a valid week start date
+        if (empty($weekStart)) {
+            continue;
+        }
+        
         $daySteps = [
             'monday' => $entry['monday'],
             'tuesday' => $entry['tuesday'],
