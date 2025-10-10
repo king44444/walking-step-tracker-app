@@ -214,9 +214,9 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
                 $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
                 $cls = badge_class_for_steps($steps);
               ?>
-                <div>
+                <div class="flex items-center gap-2">
                   <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?>"><?= $label ?></span>
-                  <div class="text-xs text-white/60 mt-1"><?= $count ?></div>
+                  <div class="text-sm font-semibold"><?= $count ?></div>
                 </div>
               <?php endforeach; ?>
             </div>
