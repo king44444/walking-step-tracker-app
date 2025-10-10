@@ -71,7 +71,21 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     const pctImprovement = firstHalfSum > 0 ? (secondHalfSum - firstHalfSum) / firstHalfSum
                      : (secondHalfSum > 0 ? 1 : 0);
 
-    const life = lifetimeMap.get(row.Name) || { total: 0, weeks: 0, days: 0, avg: 0, best: 0 };
+    // Normalize lifetime object to support both server-side shapes:
+    // legacy keys: { total, weeks, days, avg, best }
+    // new keys:    { total_steps, weeks_with_data, total_days, lifetime_avg, lifetime_best }
+    const rawLife = lifetimeMap.get(row.Name) || {};
+    const life = {
+      total: rawLife.total ?? rawLife.total_steps ?? 0,
+      weeks: rawLife.weeks ?? rawLife.weeks_with_data ?? 0,
+      days: rawLife.days ?? rawLife.total_days ?? 0,
+      avg: rawLife.avg ?? rawLife.lifetime_avg ?? null,
+      best: rawLife.best ?? rawLife.lifetime_best ?? 0
+    };
+    // compute avg if missing
+    if (life.avg === null) {
+      life.avg = life.days > 0 ? Math.round(life.total / life.days) : 0;
+    }
     const lifetimeTotal = Number(life.total) || 0;
     const lifetimeDays  = Number(life.days)  || 0;
     const lifetimeAvg   = Number(life.avg)   || (lifetimeDays > 0 ? Math.round(lifetimeTotal / lifetimeDays) : 0);
