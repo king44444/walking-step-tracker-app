@@ -22,6 +22,7 @@ export let NUDGES = [
 ];
 
 export let CUSTOM_AWARD_LABELS = {};
+export let DAILY_MILESTONES = [];
 export let LIFETIME_STEP_MILESTONES = [100000,250000,500000,1000000];
 export let LIFETIME_ATTENDANCE_MILESTONES = [25,50,100];
 
@@ -51,6 +52,20 @@ export async function loadConfig() {
     CUSTOM_AWARD_LABELS = cfg.CUSTOM_AWARD_LABELS || CUSTOM_AWARD_LABELS;
     LIFETIME_STEP_MILESTONES = cfg.LIFETIME_STEP_MILESTONES || LIFETIME_STEP_MILESTONES;
     LIFETIME_ATTENDANCE_MILESTONES = cfg.LIFETIME_ATTENDANCE_MILESTONES || LIFETIME_ATTENDANCE_MILESTONES;
+
+    // Try to load public-facing dynamic settings (daily milestones)
+    try {
+      const pub = await fetch(`${BASE}api/public_settings.php`, { cache: 'no-store' });
+      if (pub.ok) {
+        const pj = await pub.json();
+        if (pj && Array.isArray(pj.daily_milestones)) {
+          DAILY_MILESTONES = pj.daily_milestones;
+        }
+      }
+    } catch (e) {
+      // ignore - keep defaults or previously loaded values
+    }
+
   LEVEL_K = cfg.LEVELS?.K ?? LEVEL_K;
   LEVEL_P = cfg.LEVELS?.P ?? LEVEL_P;
   LEVEL_LABEL = cfg.LEVELS?.LABEL ?? LEVEL_LABEL;

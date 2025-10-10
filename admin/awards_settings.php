@@ -75,6 +75,25 @@ $csrf = \App\Security\Csrf::token();
       <button class="btn warn" id="resetBtn">Reset to defaults</button>
       <span id="status" class="muted"></span>
     </div>
+
+    <div style="margin-top:12px">
+      <h2 style="margin:0 0 8px 0">Daily Milestones</h2>
+      <div class="muted" style="margin-bottom:8px">Define ordered daily milestones as a JSON array of objects: [{"steps":1000,"label":"1k"}, ...]. The public site will use this list to render chips.</div>
+      <div style="margin-bottom:8px">
+        <textarea id="milestonesJson" style="width:100%;min-height:140px;background:#07102a;color:#e6ecff;border:1px solid #1e2a5a;padding:8px;border-radius:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+      </div>
+      <div class="row">
+        <button class="btn" id="formatBtn">Format JSON</button>
+        <button class="btn" id="validateBtn">Validate</button>
+        <button class="btn" id="saveMilestonesBtn">Save Milestones</button>
+        <button class="btn warn" id="resetMilestonesBtn">Reset Milestones to Defaults</button>
+        <span id="milestonesStatus" class="muted"></span>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        Tip: Use Format first, then Save Milestones. Saving other thresholds/labels is still done by the main Save button.
+      </div>
+    </div>
+
     <div class="muted" style="margin-top:8px">
       Note: changing thresholds affects badges shown on the public dashboard. Labels change the custom award names.
     </div>
@@ -96,6 +115,37 @@ $csrf = \App\Security\Csrf::token();
       document.getElementById('label20k').value = flags['awards.first_20k'] || 'Cheryl Award';
       document.getElementById('label30k').value = flags['awards.first_30k'] || 'Megan Award';
       document.getElementById('label15k').value = flags['awards.first_15k'] || 'Dean Award';
+
+      // Load daily milestones JSON if present
+      try {
+        const raw = flags['daily.milestones'] || '';
+        if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+          // Try to pretty-print stored JSON string
+          try {
+            const arr = JSON.parse(raw);
+            document.getElementById('milestonesJson').value = JSON.stringify(arr, null, 2);
+          } catch (e) {
+            // stored value not valid JSON; place raw
+            document.getElementById('milestonesJson').value = raw;
+          }
+        } else {
+          // Try to fetch public defaults as a helpful fallback
+          try {
+            const pub = await fetch(base + 'api/public_settings.php', { cache:'no-store' });
+            const pj = await pub.json();
+            if (pj && Array.isArray(pj.daily_milestones)) {
+              document.getElementById('milestonesJson').value = JSON.stringify(pj.daily_milestones, null, 2);
+            } else {
+              document.getElementById('milestonesJson').value = '';
+            }
+          } catch (e) {
+            document.getElementById('milestonesJson').value = '';
+          }
+        }
+      } catch (e) {
+        document.getElementById('milestonesJson').value = '';
+      }
+
       s.textContent = '';
     } catch (e) {
       s.textContent = 'Failed to load settings';
@@ -141,6 +191,86 @@ $csrf = \App\Security\Csrf::token();
   document.getElementById('saveBtn').addEventListener('click', saveAll);
   document.getElementById('reloadBtn').addEventListener('click', loadSettings);
   document.getElementById('resetBtn').addEventListener('click', resetDefaults);
+
+  // Milestones editor handlers
+  function tryParseMilestones(txt) {
+    try {
+      const v = JSON.parse(txt);
+      if (!Array.isArray(v)) throw new Error('Must be an array');
+      for (const it of v) {
+        if (typeof it !== 'object' || it === null) throw new Error('Each item must be an object');
+        if (!Number.isFinite(Number(it.steps)) || Number(it.steps) <= 0) throw new Error('Each item.steps must be a positive integer');
+        if (!it.label || String(it.label).trim() === '') throw new Error('Each item.label must be non-empty');
+      }
+      return v;
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  document.getElementById('formatBtn').addEventListener('click', () => {
+    const ta = document.getElementById('milestonesJson');
+    try {
+      const v = tryParseMilestones(ta.value || '[]');
+      ta.value = JSON.stringify(v, null, 2);
+      document.getElementById('milestonesStatus').textContent = 'Formatted';
+    } catch (e) {
+      document.getElementById('milestonesStatus').textContent = 'Format error: ' + (e.message || e);
+    }
+  });
+
+  document.getElementById('validateBtn').addEventListener('click', () => {
+    const ta = document.getElementById('milestonesJson');
+    try {
+      tryParseMilestones(ta.value || '[]');
+      document.getElementById('milestonesStatus').textContent = 'Valid JSON';
+    } catch (e) {
+      document.getElementById('milestonesStatus').textContent = 'Validation error: ' + (e.message || e);
+    }
+  });
+
+  document.getElementById('saveMilestonesBtn').addEventListener('click', async () => {
+    const ta = document.getElementById('milestonesJson');
+    const statusEl = document.getElementById('milestonesStatus');
+    statusEl.textContent = 'Saving…';
+    let parsed;
+    try {
+      parsed = tryParseMilestones(ta.value || '[]');
+    } catch (e) {
+      statusEl.textContent = 'Validation error: ' + (e.message || e);
+      return;
+    }
+    try {
+      const r = await postJson(base + 'api/settings_set.php', { key: 'daily.milestones', value: JSON.stringify(parsed) });
+      if (!r.ok || (r.json && r.json.error)) {
+        statusEl.textContent = 'Save failed';
+        return;
+      }
+      statusEl.textContent = 'Saved';
+      setTimeout(()=>{ if (statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 1200);
+    } catch (e) {
+      statusEl.textContent = 'Save error';
+    }
+  });
+
+  document.getElementById('resetMilestonesBtn').addEventListener('click', async () => {
+    if (!confirm('Reset milestones to defaults from site/config.json?')) return;
+    try {
+      // Fetch public defaults and overwrite textarea & save
+      const pub = await fetch(base + 'api/public_settings.php', { cache: 'no-store' });
+      const pj = await pub.json();
+      const arr = (pj && Array.isArray(pj.daily_milestones)) ? pj.daily_milestones : [];
+      document.getElementById('milestonesJson').value = JSON.stringify(arr, null, 2);
+      // Save to DB
+      const r = await postJson(base + 'api/settings_set.php', { key: 'daily.milestones', value: JSON.stringify(arr) });
+      const statusEl = document.getElementById('milestonesStatus');
+      if (!r.ok || (r.json && r.json.error)) { statusEl.textContent = 'Reset save failed'; return; }
+      statusEl.textContent = 'Reset and saved';
+      setTimeout(()=>{ if (statusEl.textContent === 'Reset and saved') statusEl.textContent = ''; }, 1200);
+    } catch (e) {
+      document.getElementById('milestonesStatus').textContent = 'Reset failed';
+    }
+  });
 
   await loadSettings();
 })();

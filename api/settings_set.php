@@ -38,6 +38,8 @@ try {
     'awards.first_20k',
     'awards.first_30k',
     'awards.first_15k',
+    // Daily milestones (JSON string) editable via admin UI
+    'daily.milestones',
     // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps',
     'milestones.attendance_weeks'

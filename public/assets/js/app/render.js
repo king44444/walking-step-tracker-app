@@ -1,4 +1,4 @@
-import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION } from './config.js';
+import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION, DAILY_MILESTONES } from './config.js';
 import { fmt, safe, pickNudge, setStatus } from './utils.js';
 import { fetchFamilyWeekdayAverages } from './api.js';
 
@@ -10,6 +10,21 @@ const palette = [
   '#0ea5e9','#06b6d4','#34d399','#86efac','#facc15','#f97316','#fb7185','#f472b6',
   '#a78bfa','#60a5fa','#7dd3fc','#64748b','#fda4af','#fde68a','#bbf7d0','#e9d5ff'
 ];
+
+// Helper to pick badge color classes based on milestone steps (simple heuristic)
+function badgeClassForSteps(steps) {
+  // return { bg: 'bg-emerald-500/15', text: 'text-emerald-300' }
+  try {
+    const s = Number(steps) || 0;
+    if (s >= 30000) return { bg: 'bg-emerald-500/15', text: 'text-emerald-300' };
+    if (s >= 20000) return { bg: 'bg-yellow-500/15', text: 'text-yellow-300' };
+    if (s >= 15000) return { bg: 'bg-lime-500/15', text: 'text-lime-300' };
+    if (s >= 10000) return { bg: 'bg-green-500/15', text: 'text-green-300' };
+    if (s >= 2500)  return { bg: 'bg-cyan-500/15', text: 'text-cyan-300' };
+    if (s >= 1000)  return { bg: 'bg-blue-500/15', text: 'text-blue-300' };
+    return { bg: 'bg-white/5', text: 'text-white/70' };
+  } catch (e) { return { bg: 'bg-white/5', text: 'text-white/70' }; }
+}
 
 let stackedChartRef = null;
 let renderGen = 0;
@@ -706,12 +721,24 @@ export function renderCards(people) {
     p.days.forEach((v, idx) => {
       if (!Number.isFinite(v)) return;
       const day = DAY_ORDER[idx];
-      if (v >= THIRTY_K_THRESHOLD) badges.push(`<span class="chip bg-emerald-500/15 text-emerald-300" title="${day}">30k</span>`);
-      if (v >= CHERYL_THRESHOLD)   badges.push(`<span class="chip bg-yellow-500/15 text-yellow-300" title="${day}">Cheryl</span>`);
-      if (v >= DAILY_GOAL_15K)     badges.push(`<span class="chip bg-lime-500/15 text-lime-300" title="${day}">15k</span>`);
-      if (v >= DAILY_GOAL_10K)     badges.push(`<span class="chip bg-green-500/15 text-green-300" title="${day}">10k</span>`);
-      if (v >= DAILY_GOAL_2_5K)    badges.push(`<span class="chip bg-cyan-500/15 text-cyan-300" title="${day}">2.5k</span>`);
-      if (v >= DAILY_GOAL_1K)      badges.push(`<span class="chip bg-blue-500/15 text-blue-300" title="${day}">1k</span>`);
+      // Use configured DAILY_MILESTONES (ordered); fall back to legacy thresholds if not set
+      const list = (Array.isArray(DAILY_MILESTONES) && DAILY_MILESTONES.length) ? DAILY_MILESTONES : [
+        { steps: DAILY_GOAL_1K, label: '1k' },
+        { steps: DAILY_GOAL_2_5K, label: '2.5k' },
+        { steps: DAILY_GOAL_10K, label: '10k' },
+        { steps: DAILY_GOAL_15K, label: '15k' },
+        { steps: CHERYL_THRESHOLD, label: 'Cheryl' },
+        { steps: THIRTY_K_THRESHOLD, label: '30k' }
+      ];
+      list.forEach(m => {
+        const steps = Number(m?.steps || 0);
+        if (steps <= 0) return;
+        if (v >= steps) {
+          const lbl = String(m.label || steps);
+          const cls = badgeClassForSteps(steps);
+          badges.push(`<span class="chip ${cls.bg} ${cls.text}" title="${day}">${lbl}</span>`);
+        }
+      });
     });
     const tag = p.tag ? `<span class="ml-2 text-xs text-white/60">(${safe(p.tag)})</span>` : '';
     const levelRow = (Number.isFinite(p.lifetimeTotal) && p.lifetimeTotal > 0)

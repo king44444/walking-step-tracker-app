@@ -22,6 +22,8 @@ try {
     'awards.first_20k' => setting_get('awards.first_20k', 'Cheryl Award'),
     'awards.first_30k' => setting_get('awards.first_30k', 'Megan Award'),
     'awards.first_15k' => setting_get('awards.first_15k', 'Dean Award'),
+    // Daily milestones (JSON string)
+    'daily.milestones' => setting_get('daily.milestones', ''),
     // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps' => setting_get('milestones.lifetime_steps', '100000,250000,500000,750000,1000000'),
     'milestones.attendance_weeks' => setting_get('milestones.attendance_weeks', '25,50,100'),
