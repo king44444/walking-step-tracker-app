@@ -50,27 +50,31 @@ function renderAwardsGrid(awards) {
   const container = document.getElementById('awards-grid');
   if (!container) return;
   
-  // Sort: earned first (by threshold asc), then locked (by threshold asc)
-  const sorted = [...awards].sort((a, b) => {
-    if (a.earned && !b.earned) return -1;
-    if (!a.earned && b.earned) return 1;
-    return a.threshold - b.threshold;
-  });
+  // Only show earned awards on the profile page
+  const earnedOnly = (awards || []).filter(a => a && a.earned).sort((a, b) => a.threshold - b.threshold);
   
-  // Filter earned awards for lightbox navigation
-  earnedAwards = sorted.filter(a => a.earned);
+  // Prepare earnedAwards for the lightbox (ordered)
+  earnedAwards = earnedOnly;
   
-  container.innerHTML = sorted.map((award, index) => {
-    const statusClass = award.earned ? 'earned' : 'locked';
-    const statusText = award.earned 
-      ? `Earned · ${formatDate(award.awarded_at)}`
-      : `Locked · needs ${award.title.toLowerCase()}`;
+  if (earnedOnly.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: rgba(230, 236, 255, 0.6);">
+        No lifetime awards earned yet.
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = earnedOnly.map((award, index) => {
+    const statusClass = 'earned';
+    const countText = (typeof award.count === 'number' && award.count > 0) ? ` · ${award.count}x` : '';
+    const statusText = award.awarded_at
+      ? `Earned · ${formatDate(award.awarded_at)}${countText}`
+      : `Earned${countText}`;
     
-    const clickable = award.earned ? `onclick="openLightbox(${earnedAwards.findIndex(a => a.key === award.key)})"` : '';
-    const tabindex = award.earned ? '0' : '-1';
-    const ariaLabel = award.earned 
-      ? `Open award ${award.title}, earned ${formatDate(award.awarded_at)}`
-      : `${award.title}, locked`;
+    const clickable = `onclick="openLightbox(${index})"`;
+    const tabindex = '0';
+    const ariaLabel = `Open award ${award.title}${award.awarded_at ? ', earned ' + formatDate(award.awarded_at) : ''}`;
     
     return `
       <button 
@@ -78,7 +82,7 @@ function renderAwardsGrid(awards) {
         ${clickable}
         tabindex="${tabindex}"
         aria-label="${ariaLabel}"
-        ${award.earned ? `onkeydown="handleCardKeydown(event, ${earnedAwards.findIndex(a => a.key === award.key)})"` : ''}
+        onkeydown="handleCardKeydown(event, ${index})"
       >
         <img 
           src="${award.thumb_url}" 

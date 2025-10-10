@@ -4,6 +4,7 @@ declare(strict_types=1);
 // DEPRECATED: This endpoint will be removed; use router /api/... instead
 header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/lib/settings.php';
 App\Core\Env::bootstrap(dirname(__DIR__));
 use App\Config\DB;
 $pdo = DB::pdo();
@@ -50,7 +51,18 @@ try {
     $r['lifetime_avg'] = $r['total_days'] > 0 ? (int)round($r['total_steps'] / $r['total_days']) : 0;
 
     // Compute milestone counts per user (counts of days where steps >= milestone)
-    $raw = setting_get('daily.milestones', '');
+    // Read 'daily.milestones' directly from settings table to avoid depending on helper functions
+    $raw = '';
+    try {
+      $stSetting = $pdo->prepare('SELECT value FROM settings WHERE key = :k LIMIT 1');
+      $stSetting->execute([':k' => 'daily.milestones']);
+      $val = $stSetting->fetchColumn();
+      if ($val !== false && $val !== null) $raw = (string)$val;
+    } catch (Throwable $e) {
+      // settings table may not exist yet or query failed — fall back to config file below
+      $raw = '';
+    }
+
     $milestones = [];
     if (is_string($raw) && strlen(trim($raw)) > 0) {
       $decoded = json_decode($raw, true);

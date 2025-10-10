@@ -82,127 +82,119 @@ $csrf = \App\Security\Csrf::token();
 <script>
 (async function(){
   const base = '../';
-  const s = document.getElementById('status');
 
   async function loadSettings(){
-    s.textContent = 'Loading…';
+    const statusEl = document.getElementById('milestonesStatus');
+    if (statusEl) statusEl.textContent = 'Loading…';
     try {
       const res = await fetch(base + 'api/settings_get.php', { cache:'no-store' });
       const flags = await res.json();
 
-      // Load daily milestones JSON if present
-      try {
-        const raw = flags['daily.milestones'] || '';
-        if (raw && typeof raw === 'string' && raw.trim().length > 0) {
-          // Try to pretty-print stored JSON string
-          try {
-            const arr = JSON.parse(raw);
-            document.getElementById('milestonesJson').value = JSON.stringify(arr, null, 2);
-          } catch (e) {
-            // stored value not valid JSON; place raw
-            document.getElementById('milestonesJson').value = raw;
-          }
-        } else {
-          // Try to fetch public defaults as a helpful fallback
-          try {
-            const pub = await fetch(base + 'api/public_settings.php', { cache:'no-store' });
-            const pj = await pub.json();
-            if (pj && Array.isArray(pj.daily_milestones)) {
-              document.getElementById('milestonesJson').value = JSON.stringify(pj.daily_milestones, null, 2);
-            } else {
-              document.getElementById('milestonesJson').value = '';
-            }
-          } catch (e) {
+      const raw = flags['daily.milestones'] || '';
+      if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+        try {
+          const arr = JSON.parse(raw);
+          document.getElementById('milestonesJson').value = JSON.stringify(arr, null, 2);
+        } catch (e) {
+          document.getElementById('milestonesJson').value = raw;
+        }
+      } else {
+        try {
+          const pub = await fetch(base + 'api/public_settings.php', { cache:'no-store' });
+          const pj = await pub.json();
+          if (pj && Array.isArray(pj.daily_milestones)) {
+            document.getElementById('milestonesJson').value = JSON.stringify(pj.daily_milestones, null, 2);
+          } else {
             document.getElementById('milestonesJson').value = '';
           }
+        } catch (e) {
+          document.getElementById('milestonesJson').value = '';
         }
-      } catch (e) {
-        document.getElementById('milestonesJson').value = '';
       }
 
-      s.textContent = '';
+      if (statusEl) statusEl.textContent = '';
     } catch (e) {
-      s.textContent = 'Failed to load settings';
+      if (statusEl) statusEl.textContent = 'Failed to load settings';
+      console.error('loadSettings error', e);
     }
   }
 
-  // Milestones editor handlers (validation/format/save/reset)
   function tryParseMilestones(txt) {
-    try {
-      const v = JSON.parse(txt);
-      if (!Array.isArray(v)) throw new Error('Must be an array');
-      for (const it of v) {
-        if (typeof it !== 'object' || it === null) throw new Error('Each item must be an object');
-        if (!Number.isFinite(Number(it.steps)) || Number(it.steps) <= 0) throw new Error('Each item.steps must be a positive integer');
-        if (!it.label || String(it.label).trim() === '') throw new Error('Each item.label must be non-empty');
-      }
-      return v;
-    } catch (e) {
-      throw e;
+    const v = JSON.parse(txt);
+    if (!Array.isArray(v)) throw new Error('Must be an array');
+    for (const it of v) {
+      if (typeof it !== 'object' || it === null) throw new Error('Each item must be an object');
+      if (!Number.isFinite(Number(it.steps)) || Number(it.steps) <= 0) throw new Error('Each item.steps must be a positive integer');
+      if (!it.label || String(it.label).trim() === '') throw new Error('Each item.label must be non-empty');
     }
+    return v;
   }
 
   document.getElementById('formatBtn').addEventListener('click', () => {
     const ta = document.getElementById('milestonesJson');
+    const statusEl = document.getElementById('milestonesStatus');
     try {
       const v = tryParseMilestones(ta.value || '[]');
       ta.value = JSON.stringify(v, null, 2);
-      document.getElementById('milestonesStatus').textContent = 'Formatted';
+      if (statusEl) statusEl.textContent = 'Formatted';
     } catch (e) {
-      document.getElementById('milestonesStatus').textContent = 'Format error: ' + (e.message || e);
+      if (statusEl) statusEl.textContent = 'Format error: ' + (e.message || e);
     }
   });
 
   document.getElementById('validateBtn').addEventListener('click', () => {
     const ta = document.getElementById('milestonesJson');
+    const statusEl = document.getElementById('milestonesStatus');
     try {
       tryParseMilestones(ta.value || '[]');
-      document.getElementById('milestonesStatus').textContent = 'Valid JSON';
+      if (statusEl) statusEl.textContent = 'Valid JSON';
     } catch (e) {
-      document.getElementById('milestonesStatus').textContent = 'Validation error: ' + (e.message || e);
+      if (statusEl) statusEl.textContent = 'Validation error: ' + (e.message || e);
     }
   });
 
   document.getElementById('saveMilestonesBtn').addEventListener('click', async () => {
     const ta = document.getElementById('milestonesJson');
     const statusEl = document.getElementById('milestonesStatus');
-    statusEl.textContent = 'Saving…';
+    if (statusEl) statusEl.textContent = 'Saving…';
     let parsed;
     try {
       parsed = tryParseMilestones(ta.value || '[]');
     } catch (e) {
-      statusEl.textContent = 'Validation error: ' + (e.message || e);
+      if (statusEl) statusEl.textContent = 'Validation error: ' + (e.message || e);
       return;
     }
     try {
       const r = await postJson(base + 'api/settings_set.php', { key: 'daily.milestones', value: JSON.stringify(parsed) });
       if (!r.ok || (r.json && r.json.error)) {
-        statusEl.textContent = 'Save failed';
+        if (statusEl) statusEl.textContent = 'Save failed';
         return;
       }
-      statusEl.textContent = 'Saved';
-      setTimeout(()=>{ if (statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 1200);
+      if (statusEl) statusEl.textContent = 'Saved';
+      setTimeout(()=>{ if (statusEl && statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 1200);
     } catch (e) {
-      statusEl.textContent = 'Save error';
+      if (statusEl) statusEl.textContent = 'Save error';
     }
   });
 
   document.getElementById('resetMilestonesBtn').addEventListener('click', async () => {
     if (!confirm('Reset milestones to defaults from site/config.json?')) return;
+    const statusEl = document.getElementById('milestonesStatus');
+    if (statusEl) statusEl.textContent = 'Resetting…';
     try {
-      // Fetch public defaults and overwrite textarea & save
-      const pub = await fetch(base + 'api/public_settings.php', { cache: 'no-store' });
+      const pub = await fetch(base + 'api/public_settings.php', { cache:'no-store' });
       const pj = await pub.json();
       const arr = (pj && Array.isArray(pj.daily_milestones)) ? pj.daily_milestones : [];
       document.getElementById('milestonesJson').value = JSON.stringify(arr, null, 2);
-      // Save to DB
       const r = await postJson(base + 'api/settings_set.php', { key: 'daily.milestones', value: JSON.stringify(arr) });
-      const statusEl = document.getElementById('milestonesStatus');
-      if (!r.ok || (r.json && r.json.error)) { statusEl.textContent = 'Reset save failed'; return; }
-      statusEl.textContent = 'Reset and saved';
-      setTimeout(()=>{ if (statusEl.textContent === 'Reset and saved') statusEl.textContent = ''; }, 1200);
+      if (!r.ok || (r.json && r.json.error)) {
+        if (statusEl) statusEl.textContent = 'Reset save failed';
+        return;
+      }
+      if (statusEl) statusEl.textContent = 'Reset and saved';
+      setTimeout(()=>{ if (statusEl && statusEl.textContent === 'Reset and saved') statusEl.textContent = ''; }, 1200);
     } catch (e) {
-      document.getElementById('milestonesStatus').textContent = 'Reset failed';
+      if (statusEl) statusEl.textContent = 'Reset failed';
     }
   });
 
@@ -210,7 +202,6 @@ $csrf = \App\Security\Csrf::token();
 
   await loadSettings();
 })();
-
 </script>
 </body>
 </html>
