@@ -56,65 +56,56 @@ $stTotals = $pdo->query("SELECT name,
 $higher = 0; foreach ($stTotals->fetchAll(PDO::FETCH_ASSOC) as $t) { if ((int)$t['total'] > $total) $higher++; }
 $rank = $higher + 1;
 
-// Milestone counts (1k, 2.5k, 10k, 15k, Cheryl, 30k) — read thresholds from site/config.json if present
-$configJson = @file_get_contents(__DIR__ . '/config.json');
-$config = $configJson ? json_decode($configJson, true) : [];
-$goals = $config['GOALS'] ?? [];
-$thresholds_cfg = $config['THRESHOLDS'] ?? [];
+ // Dynamic daily milestones driven by admin setting 'daily.milestones'
+ // Read admin setting; fallback to site/config.json public defaults
+ require_once __DIR__ . '/../api/lib/settings.php';
+ $rawMilestones = setting_get('daily.milestones', null);
+ if ($rawMilestones && is_string($rawMilestones) && trim($rawMilestones) !== '') {
+   $parsedMilestones = json_decode($rawMilestones, true);
+ } else {
+   $cfgJson = @file_get_contents(__DIR__ . '/config.json');
+   $cfg = $cfgJson ? json_decode($cfgJson, true) : [];
+   $parsedMilestones = $cfg['daily_milestones'] ?? $cfg['dailyMilestones'] ?? $cfg['DAILY_MILESTONES'] ?? [];
+ }
+ $milestones = [];
+ if (is_array($parsedMilestones)) {
+   foreach ($parsedMilestones as $it) {
+     if (!is_array($it)) continue;
+     $steps = isset($it['steps']) ? (int)$it['steps'] : 0;
+     $label = isset($it['label']) ? trim((string)$it['label']) : '';
+     if ($steps > 0 && $label !== '') $milestones[] = ['steps'=>$steps, 'label'=>$label];
+   }
+ }
+ // sort ascending by steps
+ usort($milestones, function($a,$b){ return $a['steps'] <=> $b['steps']; });
 
-$th1k = (int)($goals['DAILY_GOAL_1K'] ?? 1000);
-$th2_5k = (int)($goals['DAILY_GOAL_2_5K'] ?? 2500);
-$th10k = (int)($goals['DAILY_GOAL_10K'] ?? 10000);
-$th15k = (int)($goals['DAILY_GOAL_15K'] ?? 15000);
-$cherylT = (int)($thresholds_cfg['CHERYL_THRESHOLD'] ?? 20000);
-$thirtyT = (int)($thresholds_cfg['THIRTY_K_THRESHOLD'] ?? 30000);
-
-// Aggregate counts per-day across weekly rows
-$countsSql = "SELECT
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t1 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t1 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t1 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t1 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t1 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t1 THEN 1 ELSE 0 END)) AS onek,
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t2 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t2 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t2 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t2 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t2 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t2 THEN 1 ELSE 0 END)) AS two5k,
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t3 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t3 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t3 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t3 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t3 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t3 THEN 1 ELSE 0 END)) AS tenk,
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t4 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t4 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t4 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t4 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t4 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t4 THEN 1 ELSE 0 END)) AS fifteenk,
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t5 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t5 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t5 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t5 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t5 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t5 THEN 1 ELSE 0 END)) AS cherylCount,
-  SUM((CASE WHEN monday IS NOT NULL AND monday >= :t6 THEN 1 ELSE 0 END)
-    +(CASE WHEN tuesday IS NOT NULL AND tuesday >= :t6 THEN 1 ELSE 0 END)
-    +(CASE WHEN wednesday IS NOT NULL AND wednesday >= :t6 THEN 1 ELSE 0 END)
-    +(CASE WHEN thursday IS NOT NULL AND thursday >= :t6 THEN 1 ELSE 0 END)
-    +(CASE WHEN friday IS NOT NULL AND friday >= :t6 THEN 1 ELSE 0 END)
-    +(CASE WHEN saturday IS NOT NULL AND saturday >= :t6 THEN 1 ELSE 0 END)) AS thirtyK
-  FROM entries WHERE name = :n";
-
-$cntStmt = $pdo->prepare($countsSql);
-$cntStmt->execute([
-  ':t1' => $th1k, ':t2' => $th2_5k, ':t3' => $th10k, ':t4' => $th15k,
-  ':t5' => $cherylT, ':t6' => $thirtyT, ':n' => $name
-]);
-$counts = $cntStmt->fetch(PDO::FETCH_ASSOC) ?: ['onek'=>0,'two5k'=>0,'tenk'=>0,'fifteenk'=>0,'cherylCount'=>0,'thirtyK'=>0];
+ // Build single SQL that computes a column per milestone (single table scan)
+ $milestonesCounts = [];
+ if (!empty($milestones)) {
+   $cols = [];
+   $binds = [':n' => $name];
+   foreach ($milestones as $i => $m) {
+     $param = ':t' . $i;
+     $cols[] = "SUM((CASE WHEN monday IS NOT NULL AND monday >= {$param} THEN 1 ELSE 0 END)"
+            . " + (CASE WHEN tuesday IS NOT NULL AND tuesday >= {$param} THEN 1 ELSE 0 END)"
+            . " + (CASE WHEN wednesday IS NOT NULL AND wednesday >= {$param} THEN 1 ELSE 0 END)"
+            . " + (CASE WHEN thursday IS NOT NULL AND thursday >= {$param} THEN 1 ELSE 0 END)"
+            . " + (CASE WHEN friday IS NOT NULL AND friday >= {$param} THEN 1 ELSE 0 END)"
+            . " + (CASE WHEN saturday IS NOT NULL AND saturday >= {$param} THEN 1 ELSE 0 END)) AS c{$i}";
+     $binds[$param] = $m['steps'];
+   }
+   $sql = "SELECT\n  " . implode(",\n  ", $cols) . "\nFROM entries WHERE name = :n";
+   $stmt = $pdo->prepare($sql);
+   $stmt->execute($binds);
+   $row = $stmt->fetch(PDO::FETCH_NUM);
+   if ($row !== false) {
+     foreach ($row as $i => $val) {
+       $milestonesCounts[$milestones[$i]['steps']] = (int)$val;
+     }
+   } else {
+     foreach ($milestones as $m) $milestonesCounts[$m['steps']] = 0;
+   }
+ } 
 
 // awards
 $aw = $pdo->prepare('SELECT kind, milestone_value, image_path, created_at FROM ai_awards WHERE user_id = :id ORDER BY created_at ASC');
@@ -130,15 +121,26 @@ if ($photo) {
 }
 if ($photo === '') { $photo = 'assets/admin/no-photo.svg'; }
 
-?><!doctype html>
+ // compute dynamic base paths so site works under any mount point (e.g. /dev/html/walk)
+$script = $_SERVER['SCRIPT_NAME'] ?? '';
+// expect script like /dev/html/walk/site/user.php — remove /site/... to get root
+$siteDir = '/site';
+$root = preg_replace('#' . preg_quote($siteDir) . '/.*$#', '', $script);
+$root = rtrim($root, '/'); // e.g. /dev/html/walk or ''
+$public = ($root !== '' ? $root : '') . '/public';
+$site = ($root !== '' ? $root : '') . '/site';
+function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
+?>
+
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?= e($user['name']) ?> — Lifetime</title>
   <link rel="icon" href="../favicon.ico" />
-  <link rel="stylesheet" href="../public/assets/css/app.css" />
-  <link rel="stylesheet" href="assets/css/user_awards.css" />
+  <link rel="stylesheet" href="<?= asset($public . '/assets/css/app.css') ?>" />
+  <link rel="stylesheet" href="<?= asset($site . '/assets/css/user_awards.css') ?>" />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen">
@@ -181,6 +183,27 @@ if ($photo === '') { $photo = 'assets/admin/no-photo.svg'; }
           </div>
         </div>
         <div class="mt-2 text-white/70 text-sm">Rank: #<?= (int)$rank ?></div>
+      </div>
+
+      <div class="card p-4">
+        <div class="kicker">Milestones</div>
+        <h3 class="text-xl font-bold">Daily Milestone Counts</h3>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <?php if (empty($milestones)): ?>
+            <div style="grid-column: 1 / -1; color: rgba(230,236,255,0.6);">No daily milestones configured.</div>
+          <?php else: ?>
+            <?php foreach ($milestones as $m): 
+              $steps = $m['steps'];
+              $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
+              $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
+            ?>
+              <div class="badge bg-white/3 rounded px-3 py-2">
+                <div class="text-xs text-white/60"><?= $label ?></div>
+                <div class="text-lg font-semibold"><?= $count ?></div>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </div>
       </div>
 
       <div class="card p-4">
