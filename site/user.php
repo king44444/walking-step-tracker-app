@@ -78,6 +78,7 @@ if ($photo === '') { $photo = 'assets/admin/no-photo.svg'; }
   <title><?= e($user['name']) ?> — Lifetime</title>
   <link rel="icon" href="../favicon.ico" />
   <link rel="stylesheet" href="../public/assets/css/app.css" />
+  <link rel="stylesheet" href="assets/css/user_awards.css" />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen">
@@ -125,21 +126,30 @@ if ($photo === '') { $photo = 'assets/admin/no-photo.svg'; }
       <div class="card p-4">
         <div class="kicker">Awards</div>
         <h3 class="text-xl font-bold">Lifetime Awards</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 sm:gap-5 md:gap-6 mt-3">
-          <?php if (count($awards) === 0): ?>
-            <div class="text-white/60">No awards yet.</div>
-          <?php else: foreach ($awards as $a):
-            $img = $a['image_path'] ? (preg_match('~^https?://~',$a['image_path']) ? $a['image_path'] : ('assets/' . ltrim(preg_replace('#^/+#','', preg_replace('#^site/#','',$a['image_path'])), '/'))) : 'assets/admin/no-photo.svg';
-          ?>
-            <div class="bg-white/5 rounded-lg p-3 sm:p-4 flex flex-col items-center text-center space-y-1 min-h-[140px]">
-              <img src="<?= e($img) ?>" alt="award" class="w-16 h-16 object-contain mb-1" loading="lazy" onerror="this.src='assets/admin/no-photo.svg'">
-              <div class="text-sm font-semibold leading-tight break-words"><?= e($a['kind']) ?></div>
-              <div class="text-xs text-white/60 leading-snug"><?= number_format((int)$a['milestone_value']) ?></div>
-            </div>
-          <?php endforeach; endif; ?>
-        </div>
+        <div id="awards-grid"></div>
       </div>
     </section>
   </main>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" hidden>
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" aria-label="Close">×</button>
+      <button class="lightbox-prev" aria-label="Previous award">‹</button>
+      <img id="lb-img" class="lightbox-image" alt="" />
+      <div class="lightbox-caption">
+        <div class="lightbox-title"></div>
+        <div class="lightbox-date"></div>
+      </div>
+      <button class="lightbox-next" aria-label="Next award">›</button>
+    </div>
+  </div>
+
+  <script src="assets/js/user_awards.js"></script>
+  <script>
+    // Initialize awards system on page load
+    initUserAwards(<?= (int)$id ?>);
+  </script>
 </body>
 </html>

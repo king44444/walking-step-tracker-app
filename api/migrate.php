@@ -253,6 +253,19 @@ CREATE TABLE IF NOT EXISTS ai_awards (
 ");
 $pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_awards_user ON ai_awards(user_id);");
 
+// User awards cache table for computed award dates (idempotent)
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS user_awards_cache (
+  user_id INTEGER NOT NULL,
+  award_key TEXT NOT NULL,
+  threshold INTEGER NOT NULL,
+  awarded_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, award_key),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_awardscache_user ON user_awards_cache(user_id);");
+
 // Global settings table (idempotent). Simple key/value store.
 // Prompt 1 — Add AI toggle field support via `settings` table
 try {

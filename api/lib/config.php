@@ -34,7 +34,15 @@ if (!function_exists('env')) {
         foreach ($lines as $line) {
           if (strpos($line, '=') === false) continue;
           [$key, $val] = explode('=', $line, 2);
-          if ($key === $k) return $val;
+          if ($key === $k) {
+            // Strip surrounding quotes if present
+            $val = trim($val);
+            if ((str_starts_with($val, '"') && str_ends_with($val, '"')) ||
+                (str_starts_with($val, "'") && str_ends_with($val, "'"))) {
+              $val = substr($val, 1, -1);
+            }
+            return $val;
+          }
         }
       }
     }
