@@ -284,11 +284,11 @@ try {
                 <td>
                   <a href="../site/user.php?id=<?= (int)$a['user_id'] ?>" class="link" target="_blank">View Page</a>
                   <button class="btn warn delete-award-btn" data-id="<?= (int)$a['id'] ?>" style="margin-left:8px">Delete</button>
-                  <button class="btn" style="margin-left:8px" 
+                  <button class="btn regen-award-btn" style="margin-left:8px" 
                     data-user="<?= (int)$a['user_id'] ?>" 
                     data-kind="<?= htmlspecialchars($a['kind']) ?>" 
-                    data-value="<?= (int)$a['milestone_value'] ?>" 
-                    class="regen-award-btn">Regen</button>
+                    data-value="<?= (int)$a['milestone_value'] ?>">Regen</button>
+                  <span class="muted row-status" style="margin-left:8px"></span>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -497,7 +497,9 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
      const origText = btn.textContent;
      btn.disabled = true;
      btn.textContent = 'Regenerating...';
-     showStatus('Regenerating image...');
+     const row = btn.closest('tr');
+     const rowStatus = row ? row.querySelector('.row-status') : null;
+     if (rowStatus) rowStatus.textContent = 'Regenerating...';
 
      try {
        const tk = await freshCsrf();
@@ -508,9 +510,8 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
        });
        const j = await res.json();
        if (j && j.ok) {
-         showStatus('✓ Regenerated', 'ok');
+         if (rowStatus) rowStatus.textContent = '✓ Regenerated';
          // Refresh the row image (if present) or reload
-         const row = btn.closest('tr');
          if (row) {
            const imgEl = row.querySelector('.img-thumb');
            if (imgEl) {
@@ -528,13 +529,15 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
          } else {
            setTimeout(() => location.reload(), 800);
          }
+         // clear row status after a short delay
+         setTimeout(() => { if (rowStatus) rowStatus.textContent = ''; }, 3000);
        } else {
-         showStatus('✗ Error regenerating image', 'err');
+         if (rowStatus) rowStatus.textContent = '✗ Error';
          btn.disabled = false;
          btn.textContent = origText;
        }
      } catch (err) {
-       showStatus('✗ Error regenerating image', 'err');
+       if (rowStatus) rowStatus.textContent = '✗ Error';
        btn.disabled = false;
        btn.textContent = origText;
      }
