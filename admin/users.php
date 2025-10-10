@@ -104,6 +104,7 @@ if (is_post()) {
     $err = $e->getMessage();
   }
 }
+}
 
 $weeks = $pdo->query("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks ORDER BY week DESC")->fetchAll();
 $curWeek = $_GET['week'] ?? ($weeks[0]['week'] ?? '');

@@ -154,12 +154,13 @@ try {
         }
       }
 
-      // Attach awards to each row by name -> user_id -> awards
+      // Attach awards and user_id to each row by name -> user_id -> awards
       foreach ($rows as &$r) {
         $r['awards'] = [];
         $n = $r['name'] ?? null;
         if ($n !== null && isset($userMap[$n])) {
           $uid = $userMap[$n];
+          $r['user_id'] = $uid;
           $r['awards'] = $awardsMap[$uid] ?? [];
         }
       }

@@ -4,7 +4,7 @@ if (typeof document !== 'undefined') {
   try {
     const s = document.createElement('script');
     s.type = 'module';
-    s.src = 'app/main.js';
+    s.src = '/assets/js/app/main.js';
     s.defer = true;
     document.head.appendChild(s);
   } catch (e) {

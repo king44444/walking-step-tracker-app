@@ -92,7 +92,6 @@ async function loadWeeksManifest() {
     if (!res.ok) throw new Error("manifest fetch failed");
     const json = await res.json();
     weeksManifest = Array.isArray(json.weeks) ? json.weeks : [];
-    console.log('Loaded weeks manifest:', weeksManifest);
     weeksManifest.forEach((w, i) => {
       if (!w || !w.label || !w.file) console.warn(`weeks manifest entry #${i} missing label or file`, w);
     });
@@ -104,7 +103,6 @@ async function loadWeeksManifest() {
 }
 
 function buildWeekSelector(weeks) {
-  console.log('Building week selector with', weeks);
   const leaderboard = document.getElementById('leaderboard');
   if (!leaderboard) {
     console.warn('No #leaderboard element found; skipping week selector.');

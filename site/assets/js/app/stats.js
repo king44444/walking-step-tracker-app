@@ -1,4 +1,4 @@
-import { DAY_ORDER, DAILY_GOAL_10K, DAILY_GOAL_15K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, CHERYL_THRESHOLD, THIRTY_K_THRESHOLD, LIFETIME_STEP_MILESTONES, AWARD_LIMIT } from './config.js';
+import { DAY_ORDER, DAILY_GOAL_10K, DAILY_GOAL_15K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, CHERYL_THRESHOLD, THIRTY_K_THRESHOLD, LIFETIME_STEP_MILESTONES } from './config.js';
 import { computeLevel } from './levels.js';
 
 // Small helper used by computeStats
@@ -78,15 +78,6 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     const lifetimeBest  = Number(life.best)  || 0;
     const { level, toNext } = computeLevel(lifetimeTotal);
 
-    // mark missing (no report) up to todayIdx
-    // Using row[DAY_ORDER[i]] (raw) because it preserves absence vs 0
-    if (todayIdx >= 0) {
-      for (let i = 0; i <= todayIdx && i < DAY_ORDER.length; i++) {
-        const v = row[DAY_ORDER[i]];
-        if (!(Number.isFinite(v) && v > 0)) { /* missing */ }
-      }
-    }
-
     return {
       name: row.Name,
       tag: row.Tag,
@@ -100,22 +91,27 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
       startTotal: 0,
       cumTotals: [],
       levelAt: [],
+      dayLevelGains: []
     };
   });
 
-  const dayLevelUps1List = [];
+  // Compute start totals, cumulative totals and level changes per person
+  const dayLevelUps1List = []; // entries { name, dayIdx, gained }
   const dayLevelUps2List = [];
-  const weekLevelUpsList = [];
-  const firstThresholds = [];
-  const lifetimeStepClubs = [];
-  const lifetimeLevelMilestones = [];
-  const missing = [];
+  const weekLevelUpsList = []; // { name, gained }
+  const lifetimeStepClubs = []; // { name, mark }
+  const lifetimeLevelMilestones = []; // { name, level }
+  const firstToReportPerDay = []; // length 6, may contain nulls
+  const firstThresholds = []; // e.g. FIRST_30K etc
 
-  if (todayIdx >= 0 && todayIdx < DAY_ORDER.length) {
-    const dayIdx = todayIdx;
-    const day = dayName(todayIdx);
-    const presentToday = people.filter(p => Number.isFinite(p.days[dayIdx]));
-    // ... omitted: extra per-day calculations can be added here
+  // Prepare firstReports from rawData if available
+  if (Array.isArray(rawData.firstReports)) {
+    for (let i = 0; i < rawData.firstReports.length; i++) {
+      const fr = rawData.firstReports[i];
+      firstToReportPerDay[i] = fr ? { ...fr } : null;
+    }
+  } else {
+    for (let i=0;i<6;i++) firstToReportPerDay[i] = null;
   }
 
   // thresholds for FIRST_* awards (config driven labels exist client-side)
@@ -124,15 +120,6 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     { code: 'FIRST_20K', value: CHERYL_THRESHOLD },
     { code: 'FIRST_15K', value: DAILY_GOAL_15K }
   ];
-
-  // Helper: lookup raw reported_at and value for a person/day
-  function rawReportedFor(name, dayIdx) {
-    const r = rawRowsByName.get(name);
-    if (!r) return { value: null, reported_at: null };
-    const dayKey = DAY_ORDER[dayIdx].toLowerCase();
-    const repKey = ['mon_reported_at','tue_reported_at','wed_reported_at','thu_reported_at','fri_reported_at','sat_reported_at'][dayIdx];
-    return { value: r[dayKey] != null ? Number(r[dayKey]) : null, reported_at: r[repKey] ? Number(r[repKey]) : null };
-  }
 
   people.forEach(p => {
     const name = p.name;
@@ -154,22 +141,14 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
       cumTotals[i] = cum;
       const lv = computeLevel(cum).level;
       levelAt[i] = lv;
+      const gained = Math.max(0, lv - (levelAt[i-1] ?? startLevel));
+      p.dayLevelGains[i] = gained;
+      if (gained >= 2) dayLevelUps2List.push({ name, dayIdx: i, gained });
+      else if (gained >= 1) dayLevelUps1List.push({ name, dayIdx: i, gained });
     }
     // rewrite levelAt to be per-day (level after that day's steps)
     p.cumTotals = cumTotals;
     p.levelAt = levelAt;
-
-    // day-level gains: compare level after day i vs level before that day
-    for (let i = 0; i < DAY_ORDER.length; i++) {
-      const before = (i === 0) ? startLevel : p.levelAt[i-1];
-      const after = p.levelAt[i];
-      const gained = Math.max(0, after - before);
-      if (gained >= 1) {
-        const entry = { name, dayIdx: i, gained };
-        dayLevelUps1List.push(entry);
-        if (gained >= 2) dayLevelUps2List.push(entry);
-      }
-    }
 
     // week level-ups
     const endLevel = p.levelAt[DAY_ORDER.length-1] || startLevel;
@@ -191,14 +170,6 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
         lifetimeLevelMilestones.push({ name, level: lm });
       }
     });
-
-    // aggregate missing names up to todayIdx
-    if (todayIdx >= 0) {
-      for (let i = 0; i <= todayIdx && i < DAY_ORDER.length; i++) {
-        const v = p.days[i];
-        if (!(Number.isFinite(v) && v > 0)) { missing.push(name); break; }
-      }
-    }
   });
 
   // sort day-level lists to prefer higher gain and earlier day
@@ -226,33 +197,80 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
     if (best) firstThresholds.push(best);
   });
 
-  // Simple awards based on counts
-  const awards = [];
-  function takeTop(list, key, label) {
-    const sorted = [...list].sort((a,b)=> (b[key]||0) - (a[key]||0));
-    const seen = new Set();
-    for (const p of sorted) {
-      const v = p[key] || 0;
-      if (v <= 0) break;
-      if (seen.has(p.name)) continue;
-      awards.push({ name: p.name, label });
-      seen.add(p.name);
-      if (seen.size >= AWARD_LIMIT) break;
-    }
-  }
-  takeTop(people, 'thirtyK', '30k Day');
-  takeTop(people, 'cherylCount', 'Cheryl Award');
-
-  return {
+  // dedupe winners lists and prepare returned payload fields
+  // Keep fairness/allocator on render side; here just provide candidate lists.
+  const payload = {
     people,
-    todayIdx,
+    leader: people.slice().sort((a,b)=>b.total-a.total)[0] || null,
+    highestSingle: null,
+    biggestJump: null,
+    mostConsistent: null,
+    missing: data.map(r => {
+      const blanks = DAY_ORDER.filter((d, idx) =>
+        idx < todayIdx && !Number.isFinite(r[d])
+      );
+      return { name: r.Name, blanks };
+    }),
+    most30k: null, most20k: null, most15k: null, most10k: null, most2_5k: null, most1k: null,
+    earlyMomentum: null, closer: null,
+    most30kList: [], most20kList: [], most15kList: [], most10kList: [], most2_5kList: [], most1kList: [],
+    mostImprovedList: [], medianMasterList: [], reportingChampList: [], streakBossList: [],
+    // new awards data
+    firstToReportPerDay,
     dayLevelUps1List,
     dayLevelUps2List,
     weekLevelUpsList,
-    firstThresholds,
     lifetimeStepClubs,
     lifetimeLevelMilestones,
-    awards,
-    missing,
+    firstThresholds
   };
+
+  // preserve some previously computed quick stats for compatibility
+  // highestSingle
+  let highestSingle = null;
+  people.forEach(p => {
+    p.days.forEach((v, idx) => {
+      if (Number.isFinite(v)) {
+        if (!highestSingle || v > highestSingle.value) {
+          highestSingle = { person: p.name, value: v, day: DAY_ORDER[idx] };
+        }
+      }
+    })
+  });
+  payload.highestSingle = highestSingle;
+
+  const biggestJump = people.reduce((best, p) => {
+    if (p.biggestJump.amount > (best?.amount || 0)) return { ...p.biggestJump, person: p.name };
+    return best;
+  }, null);
+  payload.biggestJump = biggestJump;
+
+  payload.mostConsistent = [...people].filter(p => p.days.filter(x => Number.isFinite(x)).length >= 2).sort((a,b) => a.stddev - b.stddev)[0] || null;
+
+  // lists (simple reuse of existing sorts)
+  function sortedBy(field, dir='desc') {
+    return [...people].sort((a,b)=> dir==='desc' ? (b[field]-a[field]) : (a[field]-b[field]));
+  }
+  payload.most30kList = sortedBy('thirtyK');
+  payload.most20kList = sortedBy('cherylCount');
+  payload.most15kList = sortedBy('fifteenK');
+  payload.most10kList = sortedBy('tenK');
+  payload.most2_5kList = sortedBy('two5K');
+  payload.most1kList = sortedBy('oneK');
+
+  payload.most30k = payload.most30kList[0] || null;
+  payload.most20k = payload.most20kList[0] || null;
+  payload.most15k = payload.most15kList[0] || null;
+  payload.most10k = payload.most10kList[0] || null;
+  payload.most2_5k = payload.most2_5kList[0] || null;
+  payload.most1k = payload.most1kList[0] || null;
+
+  payload.mostImprovedList = [...people].sort((a,b)=> b.pctImprovement - a.pctImprovement);
+  payload.medianMasterList = sortedBy('medianCapped');
+  payload.reportingChampList = [...people].sort((a,b)=> (a.missingCount - b.missingCount) || (b.total - a.total));
+  payload.streakBossList = sortedBy('longestStreak1k');
+  payload.earlyMomentum = [...people].sort((a,b)=> b.firstHalfSum - a.firstHalfSum)[0] || null;
+  payload.closer = [...people].sort((a,b)=> b.secondHalfSum - a.secondHalfSum)[0] || null;
+
+  return payload;
 }

@@ -37,7 +37,7 @@ try {
 
   $pdo = DB::pdo();
   ob_start(); require_once __DIR__ . '/migrate.php'; ob_end_clean();
-  $st = $pdo->prepare('SELECT id,name FROM users WHERE id = :id LIMIT 1');
+  $st = $pdo->prepare('SELECT id,name,interests FROM users WHERE id = :id LIMIT 1');
   $st->execute([':id'=>$userId]);
   $u = $st->fetch(PDO::FETCH_ASSOC);
   if (!$u) { j200(['ok'=>false,'error'=>'user_not_found']); }
@@ -62,6 +62,7 @@ try {
   $res = ai_image_generate([
     'user_id' => $userId,
     'user_name' => $userName,
+    'user' => $u,  // Pass complete user object for lifetime awards
     'award_kind' => $kind,
     'milestone_value' => $milestone,
     'style' => 'badge',

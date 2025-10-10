@@ -1,0 +1,4368 @@
+# Consolidated on /Users/michaelking/Documents/projects/king-walk-week/consolidated_code.txt
+# Script version: 1.1.0
+
+
+
+# ===== FILE: ./index.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=/site/">
+  <title>Redirecting…</title>
+  <script>
+    (function() {
+      var target = "/site/";
+      if (location.pathname !== "/" && !location.pathname.startsWith("/site/")) {
+        // If served from a subpath, build absolute to /site/
+        target = "/site/";
+      }
+      try { window.location.replace(target); } catch (e) { window.location.href = target; }
+    })();
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0b1020; color: #e6ecff; display: grid; place-items: center; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    a { color: #9ecbff; }
+    .card { padding: 1rem 1.25rem; background: #0f1530; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    Redirecting to <a href="/site/">/site/</a> …
+  </div>
+</body>
+</html>
+
+
+# ===== FILE: ./phinx.php =====
+
+<?php
+return [
+  'paths' => [
+    'migrations' => 'database/migrations',
+    'seeds' => 'database/seeds'
+  ],
+  'environments' => [
+    'default_migration_table' => 'phinxlog',
+    'default_environment' => 'dev',
+    'dev' => [
+      'adapter' => 'sqlite',
+      'name' => $_ENV['DB_PATH'] ?? __DIR__ . '/data/walkweek.sqlite',
+    ],
+  ],
+];
+
+
+# ===== FILE: ./composer.json =====
+
+{
+  "name": "king-walk-week/app",
+  "type": "project",
+  "require": {
+    "vlucas/phpdotenv": "^5.6"
+  },
+  "require-dev": {
+    "robmorgan/phinx": "^0.16.10",
+    "phpunit/phpunit": "^11.2",
+    "fakerphp/faker": "^1.23",
+    "phpstan/phpstan": "^1.11",
+    "squizlabs/php_codesniffer": "^3.10"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/"
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "@php -r \"file_exists('vendor/autoload.php') || exit(0);\""
+    ],
+    "test": "phpunit",
+    "migrate": "bash scripts/migrate.sh",
+    "stan": "phpstan analyse",
+    "cs": "phpcs"
+  }
+}
+
+
+# ===== FILE: ./database/migrations/20250908000000_baseline.php =====
+
+<?php
+use Phinx\Migration\AbstractMigration;
+
+class Baseline extends AbstractMigration
+{
+    public function up(): void
+    {
+        // baseline migration — intentionally empty to anchor schema version
+    }
+
+    public function down(): void
+    {
+        // no-op
+    }
+}
+
+
+# ===== FILE: ./app/Core/Env.php =====
+
+<?php
+
+namespace App\Core;
+
+use Dotenv\Dotenv;
+
+final class Env
+{
+    public static function bootstrap(string $root): void
+    {
+        if (file_exists($root . '/.env')) {
+            $dotenv = Dotenv::createImmutable($root);
+            $dotenv->safeLoad();
+        }
+    }
+}
+
+
+# ===== FILE: ./app/Core/Router.php =====
+
+<?php
+
+namespace App\Core;
+
+final class Router
+{
+    private array $routes = [];
+    public function add(string $method, string $path, callable $handler): void
+    {
+        $this->routes[strtoupper($method)][$path] = $handler;
+    }
+    public function dispatch(string $method, string $path): void
+    {
+        $method = strtoupper($method);
+        if (isset($this->routes[$method][$path])) {
+            echo call_user_func($this->routes[$method][$path]);
+            return;
+        }
+      // fallback to legacy files if they exist
+        $legacy = $this->legacyPath($path);
+        if ($legacy && file_exists($legacy)) {
+            require $legacy;
+            return;
+        }
+        http_response_code(404);
+        echo 'Not found';
+    }
+    private function legacyPath(string $path): ?string
+    {
+      // keep legacy /api/*.php and /admin/*.php working
+        $path = trim($path, '/');
+        if (preg_match('#^(api|admin)/.+\.php$#', $path)) {
+            return __DIR__ . '/../../' . $path;
+        }
+        return null;
+    }
+}
+
+
+# ===== FILE: ./app/Config/DB.php =====
+
+<?php
+
+namespace App\Config;
+
+use PDO;
+
+final class DB
+{
+    public static function pdo(): PDO
+    {
+        $dbPath = $_ENV['DB_PATH'] ?? (__DIR__ . '/../../data/walkweek.sqlite');
+        $dir = dirname($dbPath);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+        $pdo = new PDO('sqlite:' . $dbPath, null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT => 10,
+        ]);
+        $pdo->exec('PRAGMA foreign_keys=ON');
+        $pdo->exec('PRAGMA busy_timeout=10000');
+        $pdo->exec('PRAGMA journal_mode=WAL');
+        $pdo->exec('PRAGMA synchronous=NORMAL');
+        $pdo->exec('PRAGMA temp_store=MEMORY');
+        $pdo->exec('PRAGMA wal_autocheckpoint=1000');
+        $pdo->exec('PRAGMA journal_size_limit=67108864');
+        return $pdo;
+    }
+}
+
+
+# ===== FILE: ./app/Security/Csrf.php =====
+
+<?php
+
+namespace App\Security;
+
+final class Csrf
+{
+    public static function token(): string
+    {
+        if (empty($_SESSION['csrf_secret'])) {
+            $_SESSION['csrf_secret'] = $_ENV['CSRF_SECRET'] ?? bin2hex(random_bytes(16));
+        }
+        $t = bin2hex(random_bytes(16));
+        $_SESSION['csrf_tokens'][$t] = time();
+        return $t;
+    }
+    public static function validate(string $t): bool
+    {
+        if (!isset($_SESSION['csrf_tokens'][$t])) {
+            return false;
+        }
+        unset($_SESSION['csrf_tokens'][$t]);
+        return true;
+    }
+}
+
+
+# ===== FILE: ./app/Security/AdminAuth.php =====
+
+<?php
+
+namespace App\Security;
+
+final class AdminAuth
+{
+    public static function require(): void
+    {
+        $u = $_ENV['ADMIN_USER'] ?? null;
+        $p = $_ENV['ADMIN_PASS'] ?? null;
+        if (!$u || !$p) {
+            return;
+        }
+        $user = $_SERVER['PHP_AUTH_USER'] ?? '';
+        $pass = $_SERVER['PHP_AUTH_PW'] ?? '';
+        if ($user !== $u || $pass !== $p) {
+            header('WWW-Authenticate: Basic realm="KW Admin"');
+            http_response_code(401);
+            echo 'Auth required';
+            exit;
+        }
+    }
+}
+
+
+# ===== FILE: ./app/Repositories/AiMessageRepo.php =====
+
+<?php
+
+namespace App\Repositories;
+
+use App\Config\DB;
+use PDO;
+
+final class AiMessageRepo
+{
+    private PDO $pdo;
+    public function __construct()
+    {
+        $this->pdo = DB::pdo();
+    }
+    public function listPending(): array
+    {
+        $stmt = $this->pdo->query("SELECT * FROM ai_messages WHERE approved=0 AND sent_at IS NULL ORDER BY created_at DESC");
+        return $stmt->fetchAll();
+    }
+    public function approve(int $id): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE ai_messages SET approved=1, approved_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=? AND sent_at IS NULL");
+        return $stmt->execute([$id]);
+    }
+    public function approvedUnsentForWeek(string $week): array
+    {
+        $stmt = $this->pdo->prepare("SELECT * FROM ai_messages WHERE week=? AND approved=1 AND sent_at IS NULL ORDER BY id ASC");
+        $stmt->execute([$week]);
+        return $stmt->fetchAll();
+    }
+    public function markSent(int $id): bool
+    {
+        $stmt = $this->pdo->prepare("UPDATE ai_messages SET sent_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=? AND sent_at IS NULL");
+        return $stmt->execute([$id]);
+    }
+}
+
+
+# ===== FILE: ./app/Support/Tx.php =====
+
+<?php
+
+namespace App\Support;
+
+use App\Config\DB;
+use Throwable;
+
+final class Tx
+{
+    public static function with(callable $fn, int $retries = 5, int $sleepMs = 200)
+    {
+        $pdo = DB::pdo();
+        for ($i = 0; $i <= $retries; $i++) {
+            try {
+                $pdo->exec('BEGIN IMMEDIATE');
+                $res = $fn($pdo);
+                $pdo->exec('COMMIT');
+                return $res;
+            } catch (Throwable $e) {
+                $pdo->exec('ROLLBACK');
+                if ($i === $retries) {
+                    throw $e;
+                }
+                usleep($sleepMs * 1000);
+            }
+        }
+    }
+}
+
+
+# ===== FILE: ./app/Controllers/AdminController.php =====
+
+<?php
+
+namespace App\Controllers;
+
+use App\Security\AdminAuth;
+
+final class AdminController
+{
+    public function ai(): string
+    {
+        AdminAuth::require();
+        ob_start();
+        require __DIR__ . '/../../templates/admin/ai.php';
+        return ob_get_clean();
+    }
+}
+
+
+# ===== FILE: ./app/Controllers/Api/AiController.php =====
+
+<?php
+
+namespace App\Controllers\Api;
+
+use App\Security\AdminAuth;
+use App\Security\Csrf;
+use App\Services\AIService;
+
+final class AiController
+{
+    private AIService $svc;
+    public function __construct()
+    {
+        $this->svc = new AIService();
+    }
+    private function json($data, int $code = 200)
+    {
+        http_response_code($code);
+        header('Content-Type: application/json');
+        echo json_encode($data);
+        return '';
+    }
+    public function list(): string
+    {
+        AdminAuth::require();
+        return $this->json(['ok' => true,'items' => $this->svc->listPending()]);
+    }
+    public function approve(): string
+    {
+        AdminAuth::require();
+        $id = (int)($_POST['id'] ?? 0);
+        $csrf = (string)($_POST['csrf'] ?? '');
+        if (!$id || !\App\Security\Csrf::validate($csrf)) {
+            return $this->json(['ok' => false,'error' => 'bad_request'], 400);
+        }
+        return $this->json(['ok' => $this->svc->approve($id)]);
+    }
+    public function sendApproved(): string
+    {
+        AdminAuth::require();
+        $week = (string)($_POST['week'] ?? '');
+        $csrf = (string)($_POST['csrf'] ?? '');
+        if (!$week || !\App\Security\Csrf::validate($csrf)) {
+            return $this->json(['ok' => false,'error' => 'bad_request'], 400);
+        }
+        return $this->json($this->svc->sendApprovedForWeek($week));
+    }
+}
+
+
+# ===== FILE: ./app/Services/Outbound.php =====
+
+<?php
+
+namespace App\Services;
+
+final class Outbound
+{
+    public static function sendSMS(string $to, string $body): bool
+    {
+      // TODO: integrate Twilio in a separate feature
+        return true;
+    }
+}
+
+
+# ===== FILE: ./app/Services/AIService.php =====
+
+<?php
+
+namespace App\Services;
+
+use App\Config\DB;
+use App\Repositories\AiMessageRepo;
+use App\Support\Tx;
+
+final class AIService
+{
+    private AiMessageRepo $repo;
+
+    public function __construct()
+    {
+        $this->repo = new AiMessageRepo();
+    }
+
+    public function listPending(): array
+    {
+        return $this->repo->listPending();
+    }
+
+    public function approve(int $id): bool
+    {
+        return $this->repo->approve($id);
+    }
+
+    public function sendApprovedForWeek(string $week): array
+    {
+        $rows = $this->repo->approvedUnsentForWeek($week);
+        $sentIds = [];
+        foreach ($rows as $r) {
+            $phone = $r['phone'] ?? null;
+            if (!$phone) {
+                continue;
+            }
+          // one transaction per message; mark sent inside the txn and return affected rows
+            $affected = Tx::with(function ($pdo) use ($r) {
+                $stmt = $pdo->prepare("UPDATE ai_messages SET sent_at=strftime('%Y-%m-%d %H:%M:%S','now') WHERE id=? AND sent_at IS NULL");
+                $stmt->execute([$r['id']]);
+                return $stmt->rowCount();
+            });
+            if ($affected) {
+                  // send outside of the DB transaction to avoid holding locks during network I/O
+                  Outbound::sendSMS($phone, $r['content'] ?? '');
+                  $sentIds[] = $r['id'];
+                  // pace sends 200ms
+                  usleep(200 * 1000);
+            }
+        }
+        return ['ok' => true, 'count' => count($sentIds), 'sent' => $sentIds];
+    }
+}
+
+
+# ===== FILE: ./tests/AIServiceTest.php =====
+
+<?php
+use PHPUnit\Framework\TestCase;
+use App\Services\AIService;
+use App\Config\DB;
+
+final class AIServiceTest extends TestCase
+{
+    public static function setUpBeforeClass(): void
+    {
+        // Use in-memory sqlite for tests
+        $_ENV['DB_PATH'] = ':memory:';
+        $pdo = DB::pdo();
+        $pdo->exec('CREATE TABLE ai_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT,
+            content TEXT,
+            week TEXT,
+            approved INTEGER DEFAULT 0,
+            approved_at TEXT,
+            sent_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    public function testCanInstantiateAIService(): void
+    {
+        $service = new AIService();
+        $this->assertInstanceOf(AIService::class, $service);
+    }
+}
+
+
+# ===== FILE: ./tests/AiMessageRepoTest.php =====
+
+<?php
+use PHPUnit\Framework\TestCase;
+use App\Repositories\AiMessageRepo;
+use App\Config\DB;
+
+final class AiMessageRepoTest extends TestCase
+{
+    public static function setUpBeforeClass(): void
+    {
+        // Use a file-backed sqlite DB in the system temp directory so all connections share the same DB.
+        $tmp = sys_get_temp_dir() . '/kingwalk_test.sqlite';
+        if (file_exists($tmp)) @unlink($tmp);
+        $_ENV['DB_PATH'] = $tmp;
+        $pdo = DB::pdo();
+        $pdo->exec('CREATE TABLE IF NOT EXISTS ai_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT,
+            content TEXT,
+            week TEXT,
+            approved INTEGER DEFAULT 0,
+            approved_at TEXT,
+            sent_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )');
+    }
+
+    public function testRepoFlows(): void
+    {
+        $pdo = DB::pdo();
+        $stmt = $pdo->prepare('INSERT INTO ai_messages (phone, content, week, approved) VALUES (?,?,?,0)');
+        $stmt->execute(['+15550001111', 'hello', '2025-W36']);
+        $id = (int)$pdo->lastInsertId();
+
+        $repo = new AiMessageRepo();
+
+        $pending = $repo->listPending();
+        $this->assertNotEmpty($pending);
+        $this->assertSame($id, (int)$pending[0]['id']);
+
+        $this->assertTrue($repo->approve($id));
+
+        $approved = $repo->approvedUnsentForWeek('2025-W36');
+        $this->assertNotEmpty($approved);
+        $this->assertSame($id, (int)$approved[0]['id']);
+
+        $this->assertTrue($repo->markSent($id));
+    }
+}
+
+
+# ===== FILE: ./admin/users.php =====
+
+<?php
+// Change credentials on Pi after deploy.
+declare(strict_types=1);
+ini_set('display_errors','1'); error_reporting(E_ALL);
+/* Basic auth (edit credentials) */
+const ADMIN_USER = 'mike';
+const ADMIN_PASS = 'nikki100378';
+
+if (!isset($_SERVER['PHP_AUTH_USER']) ||
+    $_SERVER['PHP_AUTH_USER'] !== ADMIN_USER ||
+    $_SERVER['PHP_AUTH_PW'] !== ADMIN_PASS) {
+  header('WWW-Authenticate: Basic realm="KW Admin"');
+  header('HTTP/1.0 401 Unauthorized');
+  echo 'Auth required';
+  exit;
+}
+
+try {
+require_once __DIR__ . '/../api/db.php';
+// Ensure schema exists without echoing anything
+ob_start();
+require_once __DIR__ . '/../api/migrate.php';
+ob_end_clean();
+
+function post($key, $default=null) { return $_POST[$key] ?? $default; }
+function is_post() { return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; }
+
+function assert_week_fmt(string $w): void {
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $w)) throw new Exception('Week must be YYYY-MM-DD');
+}
+function norm_day($v) {
+  if ($v === '' || $v === null) return null;
+  if (!is_numeric($v)) throw new Exception('Day values must be integers');
+  $i = (int)$v;
+  if ($i < 0) throw new Exception('Day values cannot be negative');
+  return $i;
+}
+
+$info = '';
+$err  = '';
+
+if (is_post()) {
+  $action = post('action', '');
+  try {
+    if ($action === 'create_user') {
+      $nm  = trim((string)post('u_name'));
+      $sx  = trim((string)post('u_sex')) ?: null;
+      $ag  = post('u_age'); $ag = strlen((string)$ag) ? (int)$ag : null;
+      $tg  = trim((string)post('u_tag')) ?: null;
+      if (!$nm) throw new Exception('Name required.');
+      // Ensure new users have explicit AI defaults: ai_opt_in=0, interests='', rival_id=NULL
+      $pdo->prepare("INSERT INTO users(name,sex,age,tag,ai_opt_in,interests,rival_id) VALUES(:n,:s,:a,:t,:ai,:int,:rid)")
+          ->execute([':n'=>$nm, ':s'=>$sx, ':a'=>$ag, ':t'=>$tg, ':ai'=>0, ':int'=>'', ':rid'=>null]);
+      $info = "User '$nm' created.";
+    }
+
+    if ($action === 'update_user') {
+      $id = (int)post('u_id');
+      $nm = trim((string)post('u_name'));
+      $sx = trim((string)post('u_sex')) ?: null;
+      $ag = post('u_age'); $ag = strlen((string)$ag) ? (int)$ag : null;
+      $tg = trim((string)post('u_tag')) ?: null;
+      $ac = (int)(post('u_active', '1') === '1');
+
+      // New AI fields
+      $ai_opt_in = (int)(post('u_ai_opt_in', '0') === '1');
+      $interests = trim((string)post('u_interests', ''));
+      $rival_raw = post('u_rival_id', '');
+      $rival_id = ($rival_raw === '' || $rival_raw === null) ? null : (int)$rival_raw;
+
+      if (!$nm) throw new Exception('Name required.');
+      $stmt = $pdo->prepare("UPDATE users SET name=:n, sex=:s, age=:a, tag=:t, is_active=:ac, ai_opt_in=:ai_opt_in, interests=:interests, rival_id=:rival_id, updated_at=datetime('now') WHERE id=:id");
+      $stmt->execute([
+        ':n'=>$nm, ':s'=>$sx, ':a'=>$ag, ':t'=>$tg, ':ac'=>$ac,
+        ':ai_opt_in'=>$ai_opt_in, ':interests'=>$interests, ':rival_id'=>$rival_id, ':id'=>$id
+      ]);
+      $info = "User '$nm' updated.";
+    }
+
+    /* Bulk add selected users to a week (users-page handler) */
+    if ($action === 'bulk_add_selected_users') {
+      $week = trim((string)post('week'));
+      assert_week_fmt($week);
+      $ids = $_POST['user_ids'] ?? [];
+      if (!is_array($ids) || !count($ids)) throw new Exception('Select at least one user.');
+
+      $pdo->beginTransaction();
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM users WHERE id=:id");
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0; $skipped=0;
+      foreach ($ids as $rid) {
+        $rid = (int)$rid;
+        $sel->execute([':id'=>$rid]);
+        if ($u = $sel->fetch()) {
+          $ins->execute([':w'=>$week, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+          $added += ($ins->rowCount() > 0) ? 1 : 0;
+          $skipped += ($ins->rowCount() === 0) ? 1 : 0;
+        }
+      }
+      $pdo->commit();
+      $info = "Added $added user(s) to $week. Skipped $skipped.";
+    }
+
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    $err = $e->getMessage();
+  }
+}
+
+$weeks = $pdo->query("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks ORDER BY week DESC")->fetchAll();
+$curWeek = $_GET['week'] ?? ($weeks[0]['week'] ?? '');
+$users = $pdo->query("SELECT id,name,sex,age,tag,is_active,photo_path,ai_opt_in,interests,rival_id FROM users ORDER BY LOWER(name)")->fetchAll();
+$allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetchAll();
+?>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KW Admin — Users</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* Reuse admin styles but keep any users-scoped CSS here */
+    body { font: 14px system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#0b1020; color:#e6ecff; }
+    a { color:#9ecbff; }
+    .wrap { max-width: 100%; margin: 24px auto; padding: 0 16px; }
+    .card { background:#0f1530; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:16px; }
+    input, select { background:#111936; color:#e6ecff; border:1px solid #1e2a5a; border-radius:8px; padding:6px 8px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:8px; border-top:1px solid rgba(255,255,255,0.08); vertical-align:middle; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .btn { padding:8px 10px; border-radius:8px; background:#1a2350; border:1px solid #2c3a7a; color:#e6ecff; cursor:pointer; }
+    .btn.warn { background:#4d1a1a; border-color:#7a2c2c; }
+    .ok { color:#7ce3a1; } .err { color:#f79; }
+    .split { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    @media (max-width:900px){ .split{ grid-template-columns: 1fr; } }
+
+    /* Users table specific */
+    #usersTable { width:100%; border-collapse:collapse; table-layout:fixed; }
+    #usersTable th, #usersTable td { padding:8px; }
+    #userSearch { margin:6px 0;width:100%;max-width:260px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h2>KW Admin — Users</h2>
+    <div>Signed in as <b><?=htmlspecialchars($_SERVER['PHP_AUTH_USER'])?></b>. · <a href="/dev/html/walk/site/">View Dashboard</a> · <a href="phones.php">Phones</a> · <a href="photos.php">Photos</a> · <a href="users.php">Users</a> · <a href="/dev/html/walk/api/lifetime.php">Lifetime JSON</a> · <a href="admin.php">Admin</a></div>
+    <?php if($info): ?><div class="ok"><?=$info?></div><?php endif; ?>
+    <?php if($err): ?><div class="err"><?=$err?></div><?php endif; ?>
+  </div>
+
+  <div class="card">
+    <h3>Users</h3>
+    <form method="post" class="row" style="margin-bottom:8px">
+      <input type="hidden" name="action" value="create_user" />
+      <label>Name: <input name="u_name" required placeholder="Name"></label>
+      <label>Sex: <input name="u_sex" style="width:60px" placeholder=""></label>
+      <label>Age: <input type="number" min="0" name="u_age" style="width:70px" placeholder=""></label>
+      <label>Tag: <input name="u_tag" style="width:160px" placeholder="Pregnant, Injured, ..."></label>
+      <button class="btn" type="submit">Add User</button>
+    </form>
+
+    <input id="userSearch" placeholder="Search users...">
+
+    <div class="row" style="margin:6px 0">
+      <form method="post" id="bulkAddForm" style="display:inline;margin-right:8px">
+        <input type="hidden" name="action" value="bulk_add_selected_users" />
+        <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <button class="btn" type="submit">Add selected to week</button>
+      </form>
+      <!-- Keep the "Add all active" UX here but submit to admin.php which owns the add_all_active_to_week handler -->
+      <form method="post" action="admin.php" style="display:inline">
+        <input type="hidden" name="action" value="add_all_active_to_week" />
+        <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <button class="btn" type="submit">Add all active to week</button>
+      </form>
+    </div>
+
+      <?php if ($users): ?>
+    <table id="usersTable">
+      <thead><tr><th style="width:28px"><input type="checkbox" id="chkAll"></th><th>Name</th><th>Sex</th><th>Age</th><th>Tag</th><th>Interests</th><th>AI Opt-in</th><th>Rival</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach($users as $u): ?>
+        <tr>
+          <td><input type="checkbox" class="uChk" value="<?=$u['id']?>"></td>
+          <form method="post" style="display:contents">
+            <input type="hidden" name="action" value="update_user" />
+            <input type="hidden" name="u_id" value="<?=$u['id']?>" />
+            <td><input name="u_name" value="<?=htmlspecialchars($u['name'])?>" required></td>
+            <td><input name="u_sex" value="<?=htmlspecialchars((string)$u['sex'])?>" style="width:60px"></td>
+            <td><input type="number" min="0" name="u_age" value="<?=htmlspecialchars((string)$u['age'])?>" style="width:70px"></td>
+            <td><input name="u_tag" value="<?=htmlspecialchars((string)$u['tag'])?>" style="width:160px"></td>
+            <td><input name="u_interests" value="<?=htmlspecialchars((string)$u['interests'])?>" style="width:160px"></td>
+            <td>
+              <select name="u_ai_opt_in">
+                <option value="0" <?=(!$u['ai_opt_in'])?'selected':''?>>No</option>
+                <option value="1" <?=($u['ai_opt_in'])?'selected':''?>>Yes</option>
+              </select>
+            </td>
+            <td>
+              <select name="u_rival_id">
+                <option value=""><?=htmlspecialchars('(none)')?></option>
+                <?php foreach($allUsers as $ou): ?>
+                  <option value="<?=$ou['id']?>" <?=($ou['id']==$u['rival_id'])?'selected':''?>><?=htmlspecialchars($ou['name'])?></option>
+                <?php endforeach; ?>
+              </select>
+            </td>
+            <td>
+              <select name="u_active">
+                <option value="1" <?=$u['is_active']?'selected':''?>>Yes</option>
+                <option value="0" <?=!$u['is_active']?'selected':''?>>No</option>
+              </select>
+            </td>
+            <td><button class="btn" type="submit">Save</button></td>
+          </form>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php else: ?>
+      <p class="text-white/70">No users yet. Add some above.</p>
+    <?php endif; ?>
+  </div>
+
+</div>
+<?php } catch (Throwable $e) {
+  http_response_code(500);
+  echo "<pre style='color:#f88;background:#220;padding:8px;border:1px solid #844;border-radius:6px;'>" .
+       htmlspecialchars($e->getMessage()) . "</pre>";
+  throw $e;
+} ?>
+<script>
+(function(){
+  const q = document.getElementById('userSearch');
+  const tbl = document.getElementById('usersTable');
+  const chkAll = document.getElementById('chkAll');
+  const bulkForm = document.getElementById('bulkAddForm');
+  if (!tbl) return;
+  const tbody = tbl.querySelector('tbody');
+
+  function getRows(){ return Array.from(tbody.querySelectorAll('tr')); }
+
+  function filterUsers(){
+    const v = (q && q.value || '').trim().toLowerCase();
+    getRows().forEach(tr=>{
+      let nameEl = tr.querySelector('input[name="u_name"]') || tr.querySelector('td:nth-child(2)');
+      let name = '';
+      if (nameEl) {
+        if (nameEl.value !== undefined) name = nameEl.value;
+        else name = nameEl.textContent || '';
+      }
+      name = name.trim().toLowerCase();
+      tr.style.display = (v === '' || name.indexOf(v) !== -1) ? '' : 'none';
+    });
+  }
+
+  if (q) q.addEventListener('input', filterUsers);
+
+  if (chkAll) {
+    chkAll.addEventListener('change', ()=>{
+      const checked = chkAll.checked;
+      getRows().forEach(tr=>{
+        if (tr.style.display === 'none') return;
+        const cb = tr.querySelector('input.uChk');
+        if (cb) cb.checked = checked;
+      });
+    });
+  }
+
+  if (bulkForm) {
+    bulkForm.addEventListener('submit', function(e){
+      // remove previous user_ids[] inputs
+      Array.from(bulkForm.querySelectorAll('input[name="user_ids[]"]')).forEach(n=>n.remove());
+      const checked = Array.from(tbl.querySelectorAll('tbody input.uChk:checked'))
+        .filter(cb => cb.closest('tr') && cb.closest('tr').style.display !== 'none')
+        .map(cb => cb.value);
+      if (!checked.length) {
+        e.preventDefault();
+        alert('Select at least one user.');
+        return;
+      }
+      checked.forEach(id=>{
+        const h = document.createElement('input');
+        h.type = 'hidden'; h.name = 'user_ids[]'; h.value = id;
+        bulkForm.appendChild(h);
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
+
+
+# ===== FILE: ./admin/set_phone.php =====
+
+<?php
+require __DIR__ . '/../api/util.php';
+$pdo = pdo();
+$name = $_GET['name'] ?? null;
+$phone = $_GET['phone'] ?? null;
+if (!$name || !$phone) { echo "usage: ?name=Mike&phone=+18015551234"; exit; }
+$st = $pdo->prepare("UPDATE users SET phone_e164=? WHERE name=?");
+$st->execute([$phone, $name]);
+echo "ok";
+
+
+# ===== FILE: ./admin/admin.php =====
+
+<?php
+// Change credentials on Pi after deploy.
+declare(strict_types=1);
+ini_set('display_errors','1'); error_reporting(E_ALL);
+require_once __DIR__ . '/../api/lib/admin_auth.php';
+require_admin();
+
+try {
+require_once __DIR__ . '/../api/db.php';
+// Ensure schema exists without echoing anything
+require_once __DIR__ . '/../api/lib/ai.php';
+ob_start();
+require_once __DIR__ . '/../api/migrate.php';
+ob_end_clean();
+
+function post($key, $default=null) { return $_POST[$key] ?? $default; }
+function is_post() { return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; }
+
+function assert_week_fmt(string $w): void {
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $w)) throw new Exception('Week must be YYYY-MM-DD');
+}
+function norm_day($v) {
+  if ($v === '' || $v === null) return null;
+  if (!is_numeric($v)) throw new Exception('Day values must be integers');
+  $i = (int)$v;
+  if ($i < 0) throw new Exception('Day values cannot be negative');
+  return $i;
+}
+
+$info = '';
+$err  = '';
+
+if (is_post()) {
+  $action = post('action', '');
+  try {
+    if ($action === 'create_week') {
+      $week  = trim((string)post('week'));
+      $label = trim((string)post('label'));
+      if (!$week) throw new Exception('Week is required (e.g., 2025-08-24)');
+      $st = $pdo->prepare("INSERT INTO weeks(week, label, finalized) VALUES(:w,:l,0)
+                           ON CONFLICT(week) DO UPDATE SET label=excluded.label");
+      $st->execute([':w'=>$week, ':l'=>$label ?: $week]);
+      $info = "Week '$week' created/updated.";
+    }
+    if ($action === 'save_entry') {
+      // Accept optional id. If id present -> update only the day columns.
+      $week = trim((string)post('week'));
+      $id   = (int)(post('id', 0) ?? 0);
+      $name = trim((string)post('name'));
+      if (!$week || ($id === 0 && !$name)) throw new Exception('Week and name required.');
+      $days = [];
+      foreach (['monday','tuesday','wednesday','thursday','friday','saturday'] as $d) {
+        $days[$d] = norm_day(post($d));
+      }
+      // tag allowed for new inserts; sex/age may be present elsewhere but this view doesn't send them.
+      $tag = trim((string)post('tag')) ?: null;
+
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO weeks(week, label, finalized) VALUES(:w, :l, 0)
+                     ON CONFLICT(week) DO NOTHING")
+          ->execute([':w'=>$week, ':l'=>$week]);
+
+      if ($id > 0) {
+        // Update only day columns for the given id
+        $upd = $pdo->prepare("UPDATE entries SET monday=:mo,tuesday=:tu,wednesday=:we,thursday=:th,friday=:fr,saturday=:sa,updated_at=datetime('now') WHERE id=:id");
+        $upd->execute([
+          ':mo'=>$days['monday'], ':tu'=>$days['tuesday'], ':we'=>$days['wednesday'],
+          ':th'=>$days['thursday'], ':fr'=>$days['friday'], ':sa'=>$days['saturday'],
+          ':id'=>$id
+        ]);
+        // fetch name for feedback
+        $nmSt = $pdo->prepare("SELECT name FROM entries WHERE id=:id");
+        $nmSt->execute([':id'=>$id]);
+        $nm = $nmSt->fetchColumn() ?: $id;
+        $pdo->commit();
+        $info = "Saved entry for $nm ($week).";
+
+        // Enqueue nudge for rules engine (non-blocking)
+        if (ai_enabled($pdo)) {
+          try {
+            $q = $pdo->prepare("SELECT id FROM users WHERE name = ? COLLATE NOCASE");
+            $q->execute([$nm]);
+            $uid = $q->fetchColumn();
+            if ($uid && !empty($week)) {
+              ai_enqueue($pdo, 'nudge', (int)$uid, $week, 'rules-v0', null);
+            }
+          } catch (Throwable $e) {
+            /* swallow */ 
+          }
+        }
+      } else {
+        // id not provided: find by week+name. If exists, update days only. If not, insert new row.
+        $exists = $pdo->prepare("SELECT id FROM entries WHERE week=:w AND name=:n");
+        $exists->execute([':w'=>$week, ':n'=>$name]);
+        $eid = $exists->fetchColumn();
+        if ($eid) {
+          $upd = $pdo->prepare("UPDATE entries SET monday=:mo,tuesday=:tu,wednesday=:we,thursday=:th,friday=:fr,saturday=:sa,updated_at=datetime('now') WHERE id=:id");
+          $upd->execute([
+            ':mo'=>$days['monday'], ':tu'=>$days['tuesday'], ':we'=>$days['wednesday'],
+            ':th'=>$days['thursday'], ':fr'=>$days['friday'], ':sa'=>$days['saturday'],
+            ':id'=>$eid
+          ]);
+        } else {
+          // Insert new entry. Do not require sex/age here; set them NULL.
+          $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                                VALUES(:w,:n,:mo,:tu,:we,:th,:fr,:sa,NULL,NULL,:tag)");
+          $ins->execute([
+            ':w'=>$week, ':n'=>$name,
+            ':mo'=>$days['monday'], ':tu'=>$days['tuesday'], ':we'=>$days['wednesday'],
+            ':th'=>$days['thursday'], ':fr'=>$days['friday'], ':sa'=>$days['saturday'],
+            ':tag'=>$tag
+          ]);
+        }
+        $pdo->commit();
+        $info = "Saved entry for $name ($week).";
+
+        // Enqueue nudge for rules engine (non-blocking)
+        if (ai_enabled($pdo)) {
+          try {
+            $q = $pdo->prepare("SELECT id FROM users WHERE name = ? COLLATE NOCASE");
+            $q->execute([$name]);
+            $uid = $q->fetchColumn();
+            if ($uid && !empty($week)) {
+              ai_enqueue($pdo, 'nudge', (int)$uid, $week, 'rules-v0', null);
+            }
+          } catch (Throwable $e) {
+            /* swallow */ 
+          }
+        }
+      }
+    }
+
+
+
+    if ($action === 'add_participant_from_user') {
+      $week = trim((string)post('week'));
+      $uid  = (int)post('user_id');
+      if (!$week || !$uid) throw new Exception('Week and user required.');
+
+      $u = $pdo->prepare("SELECT name,sex,age,tag FROM users WHERE id=:id");
+      $u->execute([':id'=>$uid]);
+      $user = $u->fetch();
+      if (!$user) throw new Exception('User not found.');
+
+      $exists = $pdo->prepare("SELECT 1 FROM entries WHERE week=:w AND name=:n");
+      $exists->execute([':w'=>$week, ':n'=>$user['name']]);
+      if (!$exists->fetchColumn()) {
+        $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                              VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)");
+        $ins->execute([
+          ':w'=>$week, ':n'=>$user['name'],
+          ':sex'=>$user['sex'] ?: null,
+          ':age'=>$user['age'],
+          ':tag'=>$user['tag'] ?: null
+        ]);
+        $info = "Added {$user['name']} to $week.";
+      } else {
+        $info = "{$user['name']} already in $week.";
+      }
+    }
+
+
+
+    /* Create new week and copy all active users into it */
+    if ($action === 'create_week_copy_active') {
+      $week = trim((string)post('week'));
+      $label = trim((string)post('label'));
+      assert_week_fmt($week);
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO weeks(week,label,finalized) VALUES(:w,:l,0)
+                     ON CONFLICT(week) DO UPDATE SET label=COALESCE(:l,label)")
+          ->execute([':w'=>$week, ':l'=>$label ?: $week]);
+      $q = $pdo->query("SELECT name,sex,age,tag FROM users WHERE is_active=1");
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0;
+      foreach ($q as $u) {
+        $ins->execute([':w'=>$week, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Week '$week' created. Added $added active user(s).";
+    }
+
+    /* Create new week and copy roster from current open week */
+    if ($action === 'create_week_copy_from_current') {
+      $newWeek = trim((string)post('week'));
+      assert_week_fmt($newWeek);
+      // determine current open week (latest)
+      $srcWeek = $pdo->query("SELECT week FROM weeks ORDER BY week DESC LIMIT 1")->fetchColumn();
+      if (!$srcWeek) throw new Exception('No current open week to copy from.');
+      $label = trim((string)post('label'));
+
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO weeks(week,label,finalized) VALUES(:w,:l,0)
+                     ON CONFLICT(week) DO UPDATE SET label=COALESCE(:l,label)")
+          ->execute([':w'=>$newWeek, ':l'=>$label ?: $newWeek]);
+
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM entries WHERE week=:w");
+      $sel->execute([':w'=>$srcWeek]);
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0;
+      foreach ($sel as $u) {
+        $ins->execute([':w'=>$newWeek, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Week '$newWeek' created. Copied $added from $srcWeek.";
+    }
+
+    /* Copy roster from another week into current open week */
+    if ($action === 'copy_roster_from_week') {
+      $target = trim((string)post('week'));  // current open week
+      $source = trim((string)post('source_week'));
+      assert_week_fmt($target);
+      assert_week_fmt($source);
+
+      $pdo->beginTransaction();
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM entries WHERE week=:w");
+      $sel->execute([':w'=>$source]);
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0; $skipped=0;
+      foreach ($sel as $u) {
+        $ins->execute([':w'=>$target, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+        $skipped += ($ins->rowCount() === 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Copied $added user(s) to $target from $source. Skipped $skipped.";
+    }
+
+    /* Bulk add selected users to a week */
+    if ($action === 'bulk_add_selected_users') {
+      $week = trim((string)post('week'));
+      assert_week_fmt($week);
+      $ids = $_POST['user_ids'] ?? [];
+      if (!is_array($ids) || !count($ids)) throw new Exception('Select at least one user.');
+
+      $pdo->beginTransaction();
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM users WHERE id=:id AND (is_active=1 OR is_active IS NULL)");
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0; $skipped=0;
+      foreach ($ids as $rid) {
+        $rid = (int)$rid;
+        $sel->execute([':id'=>$rid]);
+        if ($u = $sel->fetch()) {
+          $ins->execute([':w'=>$week, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+          $added += ($ins->rowCount() > 0) ? 1 : 0;
+          $skipped += ($ins->rowCount() === 0) ? 1 : 0;
+        }
+      }
+      $pdo->commit();
+      $info = "Added $added user(s) to $week. Skipped $skipped.";
+    }
+
+    /* Add all active users to a week */
+    if ($action === 'add_all_active_to_week') {
+      $week = trim((string)post('week'));
+      assert_week_fmt($week);
+      $pdo->beginTransaction();
+      $q = $pdo->query("SELECT name,sex,age,tag FROM users WHERE is_active=1");
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0; $skipped=0;
+      foreach ($q as $u) {
+        $ins->execute([':w'=>$week, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+        $skipped += ($ins->rowCount() === 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Added $added active user(s) to $week. Skipped $skipped.";
+    }
+
+    /* Create new week and copy all active users into it */
+    if ($action === 'create_week_copy_active') {
+      $week = trim((string)post('week'));
+      $label = trim((string)post('label'));
+      assert_week_fmt($week);
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO weeks(week,label,finalized) VALUES(:w,:l,0)
+                     ON CONFLICT(week) DO UPDATE SET label=COALESCE(:l,label)")
+          ->execute([':w'=>$week, ':l'=>$label ?: $week]);
+      $q = $pdo->query("SELECT name,sex,age,tag FROM users WHERE is_active=1");
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0;
+      foreach ($q as $u) {
+        $ins->execute([':w'=>$week, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Week '$week' created. Added $added active user(s).";
+    }
+
+    /* Create new week and copy roster from current open week */
+    if ($action === 'create_week_copy_from_current') {
+      $newWeek = trim((string)post('week'));
+      assert_week_fmt($newWeek);
+      // determine current open week (latest)
+      $srcWeek = $pdo->query("SELECT week FROM weeks ORDER BY week DESC LIMIT 1")->fetchColumn();
+      if (!$srcWeek) throw new Exception('No current open week to copy from.');
+      $label = trim((string)post('label'));
+
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO weeks(week,label,finalized) VALUES(:w,:l,0)
+                     ON CONFLICT(week) DO UPDATE SET label=COALESCE(:l,label)")
+          ->execute([':w'=>$newWeek, ':l'=>$label ?: $newWeek]);
+
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM entries WHERE week=:w");
+      $sel->execute([':w'=>$srcWeek]);
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0;
+      foreach ($sel as $u) {
+        $ins->execute([':w'=>$newWeek, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Week '$newWeek' created. Copied $added from $srcWeek.";
+    }
+
+    /* Copy roster from another week into current open week */
+    if ($action === 'copy_roster_from_week') {
+      $target = trim((string)post('week'));  // current open week
+      $source = trim((string)post('source_week'));
+      assert_week_fmt($target);
+      assert_week_fmt($source);
+
+      $pdo->beginTransaction();
+      $sel = $pdo->prepare("SELECT name,sex,age,tag FROM entries WHERE week=:w");
+      $sel->execute([':w'=>$source]);
+      $ins = $pdo->prepare("INSERT INTO entries(week,name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag)
+                            VALUES(:w,:n,NULL,NULL,NULL,NULL,NULL,NULL,:sex,:age,:tag)
+                            ON CONFLICT(week,name) DO NOTHING");
+      $added=0; $skipped=0;
+      foreach ($sel as $u) {
+        $ins->execute([':w'=>$target, ':n'=>$u['name'], ':sex'=>$u['sex']?:null, ':age'=>$u['age'], ':tag'=>$u['tag']?:null]);
+        $added += ($ins->rowCount() > 0) ? 1 : 0;
+        $skipped += ($ins->rowCount() === 0) ? 1 : 0;
+      }
+      $pdo->commit();
+      $info = "Copied $added user(s) to $target from $source. Skipped $skipped.";
+    }
+
+    if ($action === 'delete_entry') {
+      $id = (int)post('id');
+      $pdo->prepare("DELETE FROM entries WHERE id=:id")->execute([':id'=>$id]);
+      $info = "Deleted entry id $id.";
+    }
+    if ($action === 'finalize') {
+      $week = trim((string)post('week'));
+      if (!$week) throw new Exception('Week is required.');
+      $q = $pdo->prepare("SELECT name,monday,tuesday,wednesday,thursday,friday,saturday,sex,age,tag FROM entries WHERE week=:w ORDER BY LOWER(name)");
+      $q->execute([':w'=>$week]);
+      $rows = $q->fetchAll();
+      $json = json_encode($rows, JSON_UNESCAPED_SLASHES);
+
+      $pdo->beginTransaction();
+      $pdo->prepare("INSERT INTO snapshots(week,json) VALUES(:w,:j)
+                     ON CONFLICT(week) DO UPDATE SET json=excluded.json, created_at=datetime('now')")
+          ->execute([':w'=>$week, ':j'=>$json]);
+      $pdo->prepare("UPDATE weeks SET finalized=1, finalized_at=datetime('now') WHERE week=:w")
+          ->execute([':w'=>$week]);
+      $pdo->commit();
+      $info = "Finalized $week (snapshot saved).";
+
+      // Enqueue recap for rules engine (non-blocking)
+      if (ai_enabled($pdo)) {
+        try {
+          ai_enqueue($pdo, 'recap', null, $week, 'rules-v0', null);
+        } catch (Throwable $e) {
+          // ignore enqueue errors
+        }
+      }
+    }
+    if ($action === 'unfinalize') {
+      $week = trim((string)post('week'));
+      if (!$week) throw new Exception('Week is required.');
+      $pdo->beginTransaction();
+      $pdo->prepare("DELETE FROM snapshots WHERE week=:w")->execute([':w'=>$week]);
+      $pdo->prepare("UPDATE weeks SET finalized=0, finalized_at=NULL WHERE week=:w")->execute([':w'=>$week]);
+      $pdo->commit();
+      $info = "Unfinalized $week (snapshot removed).";
+    }
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    $err = $e->getMessage();
+  }
+}
+
+$weeks = $pdo->query("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks ORDER BY week DESC")->fetchAll();
+$curWeek = $_GET['week'] ?? ($weeks[0]['week'] ?? '');
+$entries = [];
+if ($curWeek) {
+  $st = $pdo->prepare("SELECT * FROM entries WHERE week = :w ORDER BY LOWER(name)");
+  $st->execute([':w'=>$curWeek]);
+  $entries = $st->fetchAll();
+}
+
+// Provide minimal users list for select dropdowns (id and name only)
+$users = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetchAll();
+
+?>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KW Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 14px system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#0b1020; color:#e6ecff; }
+    a { color:#9ecbff; }
+    .wrap { max-width: 100%; margin: 24px auto; padding: 0 16px; }
+    .card { background:#0f1530; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:16px; }
+    input, select { background:#111936; color:#e6ecff; border:1px solid #1e2a5a; border-radius:8px; padding:6px 8px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:8px; border-top:1px solid rgba(255,255,255,0.08); vertical-align:middle; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .btn { padding:8px 10px; border-radius:8px; background:#1a2350; border:1px solid #2c3a7a; color:#e6ecff; cursor:pointer; }
+    .btn.warn { background:#4d1a1a; border-color:#7a2c2c; }
+    .ok { color:#7ce3a1; } .err { color:#f79; }
+    .split { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    @media (max-width:900px){ .split{ grid-template-columns: 1fr; } }
+
+    /* Entries table scoped styles to prevent horizontal scroll */
+    .entries-wrap { max-width: 100vw; overflow-x: hidden; }
+    .entries-table { width:100%; table-layout: fixed; border-collapse:collapse; }
+    .entries-table th, .entries-table td { padding:8px; }
+    .col-name { width: 14rem; }
+    .col-day  { width: 6.5rem; }
+    .col-tag  { width: 10rem; }
+    .entries-table input[type="number"],
+    .entries-table input[type="text"] {
+      width:100%; min-width:0; text-align:right; font-variant-numeric: tabular-nums; padding:6px 8px;
+      background:#111936; color:#e6ecff; border:1px solid #1e2a5a; border-radius:8px;
+    }
+    .name-cell { display:flex; align-items:center; gap:8px; }
+    .name-cell .delete-btn { padding:4px 6px; font-size:12px; }
+    .fab-save { position:fixed; right:16px; bottom:16px; z-index:1000; padding:10px 14px; border-radius:10px; }
+    @media (max-width:1280px){
+      .col-name{ width:11rem; }
+      .col-day{ width:5.5rem; }
+      .col-tag{ width:9rem; }
+      .entries-table th, .entries-table td { padding:6px; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+      <h2>KW Admin</h2>
+      <div>Signed in as <b><?=htmlspecialchars($_SERVER['PHP_AUTH_USER'])?></b>. · <a href="/dev/html/walk/site/">View Dashboard</a> · <a href="phones.php">Phones</a> · <a href="photos.php">Photos</a> · <a href="users.php">Users</a> · <a href="ai.php">AI</a> · <a href="/dev/html/walk/api/lifetime.php">Lifetime JSON</a></div>
+    <?php if($info): ?><div class="ok"><?=$info?></div><?php endif; ?>
+    <?php if($err): ?><div class="err"><?=$err?></div><?php endif; ?>
+
+      <div style="margin-top:8px" class="row">
+        <form method="get" action="admin.php">
+          <label>Open week:
+            <select name="week" onchange="this.form.submit()">
+              <?php foreach($weeks as $w): ?>
+                <option value="<?=$w['week']?>" <?=$w['week']===$curWeek?'selected':''?>>
+                  <?=$w['label']?> <?=$w['finalized']?'(finalized)':''?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+        </form>
+
+        <form method="post" style="display:inline;margin-left:8px">
+          <input type="hidden" name="action" value="create_week" />
+          <label>Week: <input name="week" placeholder="2025-08-24" required></label>
+          <label>Label: <input name="label" placeholder="Aug 24–30"></label>
+          <button class="btn" type="submit">Save Week</button>
+        </form>
+      </div>
+  </div>
+
+
+
+    <div class="row" style="margin-bottom:8px">
+      <form method="post" style="display:inline">
+        <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <button class="btn" name="action" value="finalize" type="submit">Finalize this week (create/update snapshot)</button>
+      </form>
+      <form method="post" style="display:inline;margin-left:8px">
+        <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <button class="btn warn" name="action" value="unfinalize" type="submit">Unfinalize (delete snapshot)</button>
+      </form>
+      <form method="post" style="display:inline;margin-left:8px">
+        <input type="hidden" name="action" value="add_all_active_to_week" />
+        <input type="hidden" name="week" value="<?=$curWeek?>" />
+        <button class="btn" type="submit">Add all active to week</button>
+      </form>
+    </div>
+
+    <form method="post" class="row" style="margin: 0 0 8px 0;">
+      <input type="hidden" name="action" value="add_participant_from_user" />
+      <input type="hidden" name="week" value="<?=$curWeek?>" />
+      <label>Select user:
+        <select name="user_id" required>
+          <option value="">— choose —</option>
+          <?php foreach($users as $u): ?>
+            <option value="<?=$u['id']?>"><?=$u['name']?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <button class="btn" type="submit">Add to week</button>
+    </form>
+
+    <div class="entries-wrap">
+      <button id="primarySaveButton" class="btn" type="button" style="margin-bottom:8px;">Save changes</button>
+      <table class="entries-table">
+        <thead>
+          <tr>
+            <th class="col-name">Name</th><th class="col-day">Mon</th><th class="col-day">Tue</th><th class="col-day">Wed</th><th class="col-day">Thu</th><th class="col-day">Fri</th><th class="col-day">Sat</th><th class="col-tag">Tag</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach($entries as $e): ?>
+            <tr>
+              <form method="post" class="entry-save-form" style="display:contents">
+                <input type="hidden" name="action" value="save_entry" />
+                <input type="hidden" name="week" value="<?=$curWeek?>" />
+                <td class="col-name name-cell">
+                  <span class="name-text"><?=htmlspecialchars($e['name'])?></span>
+                  <input type="hidden" name="id" value="<?=$e['id']?>" />
+                  <button form="delete-<?=$e['id']?>" class="btn warn delete-btn" type="submit" onclick="return confirm('Delete entry?');" style="margin-left:8px;">Delete</button>
+                </td>
+                <?php foreach(['monday','tuesday','wednesday','thursday','friday','saturday'] as $d): ?>
+                  <td class="col-day"><input type="number" min="0" name="<?=$d?>" value="<?=htmlspecialchars((string)$e[$d])?>"></td>
+                <?php endforeach; ?>
+                <td class="col-tag"><input name="tag" value="<?=htmlspecialchars((string)$e['tag'])?>"></td>
+              </form>
+              <form id="delete-<?=$e['id']?>" method="post" style="display:none">
+                <input type="hidden" name="action" value="delete_entry" />
+                <input type="hidden" name="id" value="<?=$e['id']?>" />
+              </form>
+            </tr>
+          <?php endforeach; ?>
+
+          <!-- Add new row -->
+          <tr>
+            <form method="post" class="new-entry-row" style="display:contents">
+              <input type="hidden" name="action" value="save_entry" />
+              <input type="hidden" name="week" value="<?=$curWeek?>" />
+              <td class="col-name name-cell"><input name="name" placeholder="Name" required></td>
+              <?php foreach(['monday','tuesday','wednesday','thursday','friday','saturday'] as $d): ?>
+                <td class="col-day"><input type="number" min="0" name="<?=$d?>" placeholder="0"></td>
+              <?php endforeach; ?>
+              <td class="col-tag"><input name="tag" placeholder="Pregnant, Injured, ..."></td>
+              <td><button class="btn" type="submit">Add</button></td>
+            </form>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <button id="floatingSave" class="fab-save" type="button" aria-label="Save changes">Save</button>
+  </div>
+ </div>
+<?php } catch (Throwable $e) {
+  http_response_code(500);
+  echo "<pre style='color:#f88;background:#220;padding:8px;border:1px solid #844;border-radius:6px;'>" .
+       htmlspecialchars($e->getMessage()) . "</pre>";
+  throw $e;
+} ?>
+<script>
+(function(){
+  const q = document.getElementById('userSearch');
+  const tbl = document.getElementById('usersTable');
+  const chkAll = document.getElementById('chkAll');
+  const bulkForm = document.getElementById('bulkAddForm');
+  if (!tbl) return;
+  const tbody = tbl.querySelector('tbody');
+
+  function getRows(){ return Array.from(tbody.querySelectorAll('tr')); }
+
+  function filterUsers(){
+    const v = (q && q.value || '').trim().toLowerCase();
+    getRows().forEach(tr=>{
+      let nameEl = tr.querySelector('input[name="u_name"]') || tr.querySelector('td:nth-child(2)');
+      let name = '';
+      if (nameEl) {
+        if (nameEl.value !== undefined) name = nameEl.value;
+        else name = nameEl.textContent || '';
+      }
+      name = name.trim().toLowerCase();
+      tr.style.display = (v === '' || name.indexOf(v) !== -1) ? '' : 'none';
+    });
+  }
+
+  if (q) q.addEventListener('input', filterUsers);
+
+  if (chkAll) {
+    chkAll.addEventListener('change', ()=>{
+      const checked = chkAll.checked;
+      getRows().forEach(tr=>{
+        if (tr.style.display === 'none') return;
+        const cb = tr.querySelector('input.uChk');
+        if (cb) cb.checked = checked;
+      });
+    });
+  }
+
+  if (bulkForm) {
+    bulkForm.addEventListener('submit', function(e){
+      // remove previous user_ids[] inputs
+      Array.from(bulkForm.querySelectorAll('input[name="user_ids[]"]')).forEach(n=>n.remove());
+      const checked = Array.from(tbl.querySelectorAll('tbody input.uChk:checked'))
+        .filter(cb => cb.closest('tr') && cb.closest('tr').style.display !== 'none')
+        .map(cb => cb.value);
+      if (!checked.length) {
+        e.preventDefault();
+        alert('Select at least one user.');
+        return;
+      }
+      checked.forEach(id=>{
+        const h = document.createElement('input');
+        h.type = 'hidden'; h.name = 'user_ids[]'; h.value = id;
+        bulkForm.appendChild(h);
+      });
+    });
+  }
+})();
+</script>
+<script>
+(function(){
+  async function saveAllEntries(){
+    const rows = Array.from(document.querySelectorAll('.entries-wrap .entries-table tbody tr'));
+    // iterate sequentially
+    for (const tr of rows) {
+      // skip template/empty rows that don't have any inputs
+      const dayInputs = Array.from(tr.querySelectorAll('input[type="number"]'));
+      const tagInput = tr.querySelector('input[name="tag"]');
+      const nameInput = tr.querySelector('input[name="name"]'); // present for new rows only
+      const idInput = tr.querySelector('input[name="id"]'); // present for existing rows
+
+      // If the row contains no inputs at all (e.g., an empty row), skip
+      if (!dayInputs.length && !nameInput && !idInput && !tagInput) continue;
+
+      const fd = new FormData();
+      fd.append('action','save_entry');
+      // week: prefer the hidden input if present
+      const weekInput = tr.querySelector('input[name="week"]') || document.querySelector('input[name="week"]');
+      if (weekInput) fd.append('week', weekInput.value);
+      if (idInput && idInput.value) fd.append('id', idInput.value);
+      else if (nameInput && nameInput.value) fd.append('name', nameInput.value);
+
+      // days
+      ['monday','tuesday','wednesday','thursday','friday','saturday'].forEach(d=>{
+        const inp = tr.querySelector('input[name="'+d+'"]');
+        fd.append(d, inp ? (inp.value === '' ? '' : inp.value) : '');
+      });
+      if (tagInput) fd.append('tag', tagInput.value);
+
+      try {
+        const res = await fetch(window.location.pathname, {method:'POST', body: fd});
+        if (!res.ok) {
+          const text = await res.text();
+          alert('Save failed: ' + (text || res.statusText));
+          return;
+        }
+      } catch (err) {
+        alert('Save failed: ' + err.message);
+        return;
+      }
+    }
+    // simple feedback
+    const saved = document.getElementById('primarySaveButton');
+    if (saved) saved.textContent = 'Saved';
+    setTimeout(()=>{ if (saved) saved.textContent = 'Save changes'; }, 1500);
+  }
+
+  document.getElementById('primarySaveButton')?.addEventListener('click', saveAllEntries);
+  document.getElementById('floatingSave')?.addEventListener('click', ()=>{ document.getElementById('primarySaveButton')?.click(); });
+})();
+</script>
+</body>
+</html>
+
+
+# ===== FILE: ./admin/ai_legacy.php =====
+
+<?php
+declare(strict_types=1);
+ini_set('display_errors','1'); error_reporting(E_ALL);
+
+try {
+  require_once __DIR__ . '/../api/db.php';
+  if (isset($_GET['migrate']) && $_GET['migrate'] === '1') {
+    require_once __DIR__ . '/../api/migrate.php';
+  }
+  require_once __DIR__ . '/../api/lib/admin_auth.php';
+  require_admin();
+  require_once __DIR__ . '/../api/lib/ai.php';
+  require_once __DIR__ . '/../api/lib/phone.php';
+  require_once __DIR__ . '/../api/lib/env.php';
+
+
+  $info = '';
+  $err = '';
+  $sms_send_summary_html = '';
+  $internalSecret = env('INTERNAL_API_SECRET','');
+
+  // Load weeks for selector (reuse same approach as admin.php)
+  $weeks = $pdo->query("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks ORDER BY week DESC")->fetchAll();
+  $curWeek = $_GET['week'] ?? ($weeks[0]['week'] ?? '');
+$selectedWeek = $curWeek;
+
+  if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    try {
+      // Toggle AI enabled (same as previous UI)
+      if (isset($_POST['ai_enabled'])) {
+        $val = ((string)$_POST['ai_enabled'] === '1') ? '1' : '0';
+        $st = $pdo->prepare("INSERT INTO app_settings(key,value) VALUES('ai_enabled',:v) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+        $st->execute([':v'=>$val]);
+        $info = $val === '1' ? 'AI toggled ON.' : 'AI toggled OFF.';
+      }
+
+      // Approve / Unapprove handlers
+      $action = $_POST['action'] ?? '';
+      if ($action === 'approve' || $action === 'unapprove') {
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id <= 0) throw new Exception('Invalid message id.');
+
+        if ($action === 'approve') {
+          $adminUser = require_admin_username();
+          $upd = $pdo->prepare("UPDATE ai_messages SET approved_by = :u WHERE id = :id");
+          $upd->execute([':u'=>$adminUser, ':id'=>$id]);
+          $info = "Approved message #$id by $adminUser.";
+        } else {
+          // unapprove
+          $upd = $pdo->prepare("UPDATE ai_messages SET approved_by = NULL WHERE id = :id");
+          $upd->execute([':id'=>$id]);
+          $info = "Unapproved message #$id.";
+        }
+      }
+
+      // Enqueue demo nudge (seed a test row)
+      if ($action === 'enqueue_demo') {
+        try {
+          // pick first user
+          $uid = (int)$pdo->query("SELECT id FROM users ORDER BY id LIMIT 1")->fetchColumn();
+          if ($uid) { ai_enqueue($pdo, 'nudge', $uid, $selectedWeek, 'rules-v0', 'demo'); }
+          header("Location: ai.php?week=".urlencode($selectedWeek));
+          exit;
+        } catch (Throwable $e) {
+          // swallow
+        }
+      }
+
+      // Send approved messages for week moved to api/ai_send_approved.php.
+      // The admin UI now calls that endpoint via JS to process all approved, unsent messages.
+    } catch (Throwable $e) {
+      $err = $e->getMessage();
+    }
+  }
+
+  $enabled = ai_enabled($pdo);
+
+  // Query AI messages for current week (if selected)
+  $ai_messages = [];
+  if ($curWeek) {
+    $q = $pdo->prepare("SELECT m.id, m.type, m.user_id, u.name AS user, m.week, m.model, m.content, m.approved_by, m.created_at, m.sent_at
+                        FROM ai_messages m LEFT JOIN users u ON u.id=m.user_id
+                        WHERE m.week=? ORDER BY m.created_at DESC");
+    $q->execute([$curWeek]);
+    $ai_messages = $q->fetchAll();
+  }
+
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo "<pre style='color:#f88;background:#220;padding:8px;border:1px solid #844;border-radius:6px;'>" .
+       htmlspecialchars($e->getMessage()) . "</pre>";
+  throw $e;
+}
+?><!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KW Admin — AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 14px system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#0b1020; color:#e6ecff; }
+    a { color:#9ecbff; }
+    .wrap { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    .card { background:#0f1530; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; margin-bottom:16px; }
+    input, label, select { font:inherit; color:inherit; }
+    .btn { padding:8px 10px; border-radius:8px; background:#1a2350; border:1px solid #2c3a7a; color:#e6ecff; cursor:pointer; }
+    .ok { color:#7ce3a1; } .err { color:#f79; }
+    .row { display:flex; gap:12px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:8px; border-top:1px solid rgba(255,255,255,0.08); vertical-align:middle; text-align:left; }
+    .chip { display:inline-block; padding:6px 8px; border-radius:999px; font-size:12px; }
+    .chip.approved { background:#123b20; color:#9df0b8; border:1px solid #2d6f3f; }
+    .chip.unapproved { background:#222834; color:#9aa6c8; border:1px solid #2c3a5a; }
+    .chip.sent { background:#0f2a3b; color:#a9ddff; border:1px solid #1b5f86; }
+    .small { font-size:12px; color:#aab9d9; }
+    .actions form { display:inline; margin:0; }
+    pre.content-preview { max-height:4.2rem; overflow:hidden; margin:0; color:#cfe8ff; background:transparent; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>AI Settings</h2>
+      <div><a href="admin.php">Back to Admin</a></div>
+      <div class="small"><a href="ai.php?migrate=1&amp;week=<?=urlencode($selectedWeek)?>">Run DB migration</a></div>
+      <?php if ($info): ?><div class="ok" style="margin-top:8px;"><?=$info?></div><?php endif; ?>
+      <?php if ($err): ?><div class="err" style="margin-top:8px;"><?=$err?></div><?php endif; ?>
+      <?php if (!empty($sms_send_summary_html)): ?><div style="margin-top:8px"><?=$sms_send_summary_html?></div><?php endif; ?>
+
+      <form method="post" style="margin-top:12px">
+        <label style="display:inline-flex;align-items:center;gap:8px">
+          <input type="hidden" name="ai_enabled" value="0" />
+          <input type="checkbox" name="ai_enabled" value="1" <?= $enabled ? 'checked' : '' ?> />
+          <span>AI enabled</span>
+        </label>
+        <div class="row">
+          <button class="btn" type="submit">Save</button>
+          <div style="margin-left:8px">Status: <strong><?= $enabled ? 'AI is Enabled.' : 'AI is Disabled.' ?></strong></div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>AI Messages</h3>
+      <div class="row" style="margin-bottom:12px">
+        <form method="get" action="ai.php">
+          <label>Week:
+            <select name="week" onchange="this.form.submit()">
+              <?php foreach($weeks as $w): ?>
+                <option value="<?=$w['week']?>" <?=$w['week']===$curWeek?'selected':''?>>
+                  <?=$w['label']?> <?=$w['finalized']?'(finalized)':''?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+        </form>
+        <?php
+          $w = $selectedWeek;
+          if ($w) {
+            $pending = (int)$pdo->query("SELECT COUNT(*) FROM ai_messages WHERE week=".$pdo->quote($w))->fetchColumn();
+            echo '<div class="small">AI messages in DB for '.htmlspecialchars((string)$w).': '.$pending.'</div>';
+          }
+        ?>
+        <div class="small">Select a week to view AI messages created for that week. Approve/unapprove messages; do not send from here.</div>
+
+        <!-- Run rules for week -->
+        <div class="row" style="margin-top:8px">
+          <form id="run-rules-form" method="post" action="../api/ai_rules.php" style="display:inline">
+            <input type="hidden" name="week" value="<?=htmlspecialchars((string)$selectedWeek)?>" />
+            <button class="btn" type="submit">Run rules for week</button>
+          </form>
+
+          <form method="post" style="display:inline;margin-left:8px">
+            <input type="hidden" name="action" value="enqueue_demo" />
+            <input type="hidden" name="week" value="<?=htmlspecialchars((string)$selectedWeek)?>" />
+            <button class="btn" type="submit">Enqueue demo nudge</button>
+          </form>
+
+          <form id="send-approved-form" method="post" style="display:inline; margin-left:8px">
+            <input type="hidden" id="week-input" name="week" value="<?=htmlspecialchars((string)$selectedWeek)?>" />
+            <button class="btn" id="send-approved-btn" type="button">Send approved for week</button>
+          </form>
+
+          <span id="run-rules-result" class="small" style="margin-left:8px"></span>
+        </div>
+
+        <script>
+          (function(){
+            const form = document.getElementById('run-rules-form');
+            const result = document.getElementById('run-rules-result');
+            if (!form) return;
+            form.addEventListener('submit', async function(e){
+              e.preventDefault();
+              result.textContent = 'Running...';
+              try {
+                const resp = await fetch(form.action, {
+                  method: 'POST',
+                  body: new FormData(form),
+                  credentials: 'same-origin',
+                });
+                if (!resp.ok) {
+                  const txt = await resp.text();
+                  result.textContent = 'Error: ' + resp.status + ' ' + txt;
+                  return;
+                }
+                const data = await resp.json();
+                result.textContent = 'updated: ' + (data.updated ?? '0');
+                // short delay to let user see the count, then reload to show messages
+                setTimeout(function(){ window.location.reload(); }, 700);
+              } catch (err) {
+                result.textContent = 'Request failed';
+              }
+            });
+          })();
+        </script>
+
+      </div>
+
+      <?php if (!$curWeek): ?>
+        <div class="small">No week selected.</div>
+      <?php else: ?>
+        <?php if (!count($ai_messages)): ?>
+          <div class="small">No AI messages for <?=htmlspecialchars((string)$curWeek)?>.</div>
+        <?php else: ?>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>Type</th><th>User</th><th>Model</th><th>Content</th><th>Approved</th><th>Created</th><th>Sent</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach($ai_messages as $m): ?>
+                <tr data-id="<?=htmlspecialchars((string)$m['id'])?>" data-week="<?=htmlspecialchars((string)$m['week'])?>">
+                  <td><?=htmlspecialchars((string)$m['id'])?></td>
+                  <td><?=htmlspecialchars($m['type'])?></td>
+                  <td><?=htmlspecialchars($m['user'] ?? '')?></td>
+                  <td><?=htmlspecialchars($m['model'] ?? '')?></td>
+                  <td><pre class="content-preview"><?=htmlspecialchars(substr((string)$m['content'],0,300))?></pre></td>
+                  <td>
+                    <?php if ($m['approved_by']): ?>
+                      <span class="chip approved"><?=htmlspecialchars($m['approved_by'])?></span>
+                    <?php else: ?>
+                      <span class="chip unapproved">unapproved</span>
+                    <?php endif; ?>
+                  </td>
+                  <td class="small"><?=htmlspecialchars((string)$m['created_at'])?></td>
+                  <td>
+                      <?php if ($m['sent_at']): ?>
+                      <span class="chip sent sent-status"><?=htmlspecialchars((string)$m['sent_at'])?></span>
+                    <?php else: ?>
+                      <span class="chip unapproved sent-status">not sent</span>
+                    <?php endif; ?>
+                  </td>
+                  <td class="actions">
+                    <?php if (!$m['approved_by']): ?>
+                      <form method="post" onsubmit="return confirm('Approve this message?');" style="display:inline">
+                        <input type="hidden" name="action" value="approve" />
+                        <input type="hidden" name="id" value="<?=htmlspecialchars((string)$m['id'])?>" />
+                        <button class="btn" type="submit">Approve</button>
+                      </form>
+                    <?php else: ?>
+                      <form method="post" onsubmit="return confirm('Unapprove this message?');" style="display:inline">
+                        <input type="hidden" name="action" value="unapprove" />
+                        <input type="hidden" name="id" value="<?=htmlspecialchars((string)$m['id'])?>" />
+                        <button class="btn" type="submit">Unapprove</button>
+                      </form>
+                    <?php endif; ?>
+                    <button class="btn btn-danger btn-sm ai-delete" data-id="<?= htmlspecialchars((string)$m['id']) ?>">Delete</button>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  </div>
+<script>
+document.addEventListener('click', async (e) => {
+  const del = e.target.closest('.ai-delete');
+  if (del) {
+    const id = del.dataset.id;
+    if (!confirm('Delete this message?')) return;
+    try {
+      const form = new FormData(); form.append('id', id);
+      const res = await fetch('/api/ai_delete_message.php', { method: 'POST', body: form, credentials: 'same-origin' });
+      if (!res.ok) { alert('Delete failed'); return; }
+      const json = await res.json();
+      if (!json.ok) { alert('Delete failed'); return; }
+      const tr = del.closest('tr'); if (tr) tr.remove();
+    } catch (err) {
+      alert('Delete failed: ' + (err.message || err));
+    }
+  }
+});
+
+document.getElementById('send-approved-btn')?.addEventListener('click', async () => {
+  const week = document.querySelector('#week-input')?.value || '';
+  if (!week) { alert('Pick a week'); return; }
+  try {
+    const fd = new FormData(); fd.append('week', week);
+    const res = await fetch('/api/ai_send_approved.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+    if (!res.ok) { const t = await res.text(); alert('Send failed: ' + t); return; }
+    const data = await res.json();
+    alert('Sent ' + (data.count||0) + ' message(s).');
+    (data.sent||[]).forEach(s => {
+      const tr = document.querySelector('tr[data-id=\"' + s.id + '\"]');
+      if (tr) {
+        const span = tr.querySelector('.sent-status');
+        if (span) { span.textContent = 'sent'; span.classList.remove('unapproved'); span.classList.add('sent'); }
+      }
+    });
+  } catch (err) {
+    alert('Send failed: ' + (err.message || err));
+  }
+});
+</script>
+</body>
+</html>
+
+
+# ===== FILE: ./admin/photos.php =====
+
+<?php
+require __DIR__.'/../api/util.php';
+$pdo = pdo();
+
+$assetBase = '../site/'; // relative to /admin/
+
+$users = $pdo->query("SELECT id,name,sex,age,tag,is_active,photo_path FROM users ORDER BY LOWER(name)")->fetchAll(PDO::FETCH_ASSOC);
+?><!doctype html>
+<meta charset="utf-8">
+<title>Photos</title>
+<style>
+  body{font-family:system-ui;margin:20px}
+  table{border-collapse:collapse;width:100%;max-width:900px}
+  td,th{border:1px solid #444;padding:6px 8px;vertical-align:top}
+  img.thumb{width:48px;height:48px;object-fit:cover;border-radius:50%}
+  form.inline{display:inline-block;margin:0}
+</style>
+<h1>Photos</h1>
+<p><a href="admin.php">Back to Admin</a></p>
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Photo</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <?php foreach ($users as $u): 
+      $name = htmlspecialchars($u['name']);
+      $thumbRel = $u['photo_path']
+        ? ($assetBase . ltrim($u['photo_path'], '/'))
+        : ($assetBase . 'assets/admin/no-photo.svg');
+    ?>
+    <tr>
+      <td><?= $name ?></td>
+      <td><img src="<?= htmlspecialchars($thumbRel) ?>" alt="photo" class="thumb"></td>
+      <td>
+        <form class="inline" action="../api/admin_upload_photo.php" method="post" enctype="multipart/form-data">
+          <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+          <input type="hidden" name="redirect" value="1">
+          <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
+          <button type="submit">Upload</button>
+        </form>
+        <?php if ($u['photo_path']): ?>
+        <form class="inline" action="../api/admin_delete_photo.php" method="post" onsubmit="return confirm('Remove photo?');">
+          <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+          <input type="hidden" name="redirect" value="1">
+          <button type="submit">Remove</button>
+        </form>
+        <?php endif; ?>
+      </td>
+    </tr>
+    <?php endforeach; ?>
+  </tbody>
+</table>
+
+
+# ===== FILE: ./admin/phones.php =====
+
+<?php
+require __DIR__.'/../api/util.php';
+require __DIR__.'/../api/lib/phone.php';
+$pdo = pdo();
+
+if ($_SERVER['REQUEST_METHOD']==='POST') {
+  $action = $_POST['action'] ?? '';
+  $name = $_POST['name'] ?? '';
+  if ($action==='save') {
+    $phone = $_POST['phone'] ?? '';
+    $st = $pdo->prepare("UPDATE users SET phone_e164=? WHERE name=?");
+    $st->execute([$phone ?: null, $name]);
+  } elseif ($action==='normalize') {
+    $phone = $_POST['phone'] ?? '';
+    $norm = to_e164($phone);
+    $st = $pdo->prepare("UPDATE users SET phone_e164=? WHERE name=?");
+    $st->execute([$norm, $name]);
+  } elseif ($action==='clear') {
+    $st = $pdo->prepare("UPDATE users SET phone_e164=NULL WHERE name=?");
+    $st->execute([$name]);
+  }
+  header('Location: phones.php'); exit;
+}
+
+$rows = $pdo->query("SELECT name, COALESCE(phone_e164,'') AS phone_e164 FROM users ORDER BY name COLLATE NOCASE")->fetchAll(PDO::FETCH_ASSOC);
+?><!doctype html><meta charset="utf-8"><title>Phones</title>
+<style>body{font-family:system-ui;margin:20px} table{border-collapse:collapse} td,th{border:1px solid #444;padding:6px 8px}</style>
+<h1>Phones</h1>
+<table>
+<tr><th>Name</th><th>Phone</th><th>Actions</th><th>Test curl</th></tr>
+<?php foreach($rows as $r): $n=htmlspecialchars($r['name']); $p=htmlspecialchars($r['phone_e164']); ?>
+<tr>
+  <td><?= $n ?></td>
+  <td>
+    <form method="post" style="display:inline">
+      <input type="hidden" name="name" value="<?= $n ?>">
+      <input name="phone" value="<?= $p ?>" placeholder="+18015551234">
+      <button name="action" value="save">Save</button>
+      <button name="action" value="normalize" type="submit">Normalize</button>
+      <button name="action" value="clear" type="submit">Clear</button>
+    </form>
+  </td>
+  <td></td>
+  <td><code>curl -X POST https://mikebking.com/dev/html/walk/api/sms.php --data-urlencode "From=<?= $p ?: '+1XXXXXXXXXX' ?>" --data-urlencode "Body=123"</code></td>
+</tr>
+<?php endforeach; ?>
+</table>
+
+
+# ===== FILE: ./scripts/rotate_audit.php =====
+
+<?php
+require __DIR__.'/../api/util.php';
+$pdo = pdo();
+$cut = (new DateTime('-90 days', new DateTimeZone('UTC')))->format(DateTime::ATOM);
+$st = $pdo->prepare("DELETE FROM sms_audit WHERE created_at < ?");
+$st->execute([$cut]);
+echo "pruned\n";
+
+
+# ===== FILE: ./scripts/twilio_sign.py =====
+
+#!/usr/bin/env python3
+import os, base64, hmac, hashlib
+
+# Environment inputs
+URL  = os.environ["URL"]
+AUTH = os.environ["AUTH"]
+
+# Use the exact POST values the server will see after form decoding.
+# curl --data with '+' in number becomes a leading space when decoded.
+POST = {
+  "From": " 18015550123",
+  "MessageSid": "SM_test123",
+  "MessageStatus": "delivered",
+  "To": " 13855032310",
+}
+
+joined = URL + "".join(k + POST[k] for k in sorted(POST))
+sig = base64.b64encode(hmac.new(AUTH.encode(), joined.encode(), hashlib.sha1).digest()).decode()
+print(sig)
+
+
+# ===== FILE: ./scripts/gather_code.py =====
+
+#!/usr/bin/env python3
+"""
+gather_code.py  –  Consolidate source files across a project.
+
+Usage:
+  gather_code.py [--root ROOT] [--ext EXTENSIONS] [--skip DIRS] [--skip-files NAMES] [--output FILE]
+                 [--version]
+
+Examples:
+  # Consolidate all .py and .md files, skipping venv and .git:
+  gather_code.py --ext .py,.md --skip .git,venv --output all_code.txt
+
+  # Just print version and exit:
+  gather_code.py --version
+"""
+
+import os
+import sys
+import argparse
+import logging
+
+__version__ = "1.1.0"
+
+# default extensions and directories to skip
+DEFAULT_EXTS = [".py", ".php", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".yml", ".yaml", ".html", ".htm"]
+DEFAULT_SKIP_DIRS = {".git", "backup", "__pycache__", "venv", ".venv", "env", ".env", "node_modules", "vendor", "dist", "build", ".idea", ".vscode", "tmp", "temp", "cache", "logs", "log", ".cache", ".logs", ".next", ".nuxt", ".svelte-kit", ".turbo", ".vite", ".parcel-cache", ".rollup.cache", ".pnpm-store", ".yarn", ".yalc", "coverage", ".nyc_output", "storybook-static", ".vercel", "out", "public", "assets", "_bak"}
+DEFAULT_SKIP_FILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"}
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Consolidate code files into a single text file."
+    )
+    p.add_argument(
+        "--root",
+        "-r",
+        default=".",
+        help="Root directory to start searching (default: current dir)."
+    )
+    p.add_argument(
+        "--ext",
+        "-e",
+        default=",".join(DEFAULT_EXTS),
+        help="Comma-separated list of file extensions to include (e.g. .py,.js)."
+    )
+    p.add_argument(
+        "--skip",
+        "-s",
+        default=",".join(DEFAULT_SKIP_DIRS),
+        help="Comma-separated list of directory names to skip."
+    )
+    p.add_argument(
+        "--skip-files",
+        "-F",
+        default=",".join(DEFAULT_SKIP_FILES),
+        help="Comma-separated list of file names to skip (e.g. lockfiles)."
+    )
+    p.add_argument(
+        "--output",
+        "-o",
+        default="consolidated_code.txt",
+        help="Path of the output file (default: consolidated_code.txt)."
+    )
+    p.add_argument(
+        "--version",
+        action="store_true",
+        help="Show script version and exit."
+    )
+    return p.parse_args()
+
+def should_skip_dir(dirname, skip_set):
+    """Return True if `dirname` should be skipped."""
+    return dirname in skip_set
+
+def gather_files(root, exts, skip_dirs, skip_files):
+    """Yield full paths of files under root with allowed extensions."""
+    for dirpath, dirs, files in os.walk(root):
+        # modify dirs in-place to skip unwanted subdirs
+        dirs[:] = [d for d in dirs if not should_skip_dir(d, skip_dirs)]
+        for fname in files:
+            if fname in skip_files:
+                continue
+            if os.path.splitext(fname)[1] in exts:
+                yield os.path.join(dirpath, fname)
+
+def consolidate(files, out_path):
+    """Read each file, append to out_path, logging errors per file."""
+    total = 0
+    errors = 0
+    with open(out_path, "w", encoding="utf-8") as out_f:
+        out_f.write(f"# Consolidated on {os.path.abspath(out_path)}\n")
+        out_f.write(f"# Script version: {__version__}\n\n")
+        for filepath in files:
+            total += 1
+            try:
+                with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                out_f.write(f"\n\n# ===== FILE: {filepath} =====\n\n")
+                out_f.write(content)
+            except Exception as e:
+                errors += 1
+                logging.warning(f"Error reading {filepath}: {e}")
+    return total, errors
+
+def main():
+    args = parse_args()
+    if args.version:
+        print(f"gather_code.py version {__version__}")
+        sys.exit(0)
+
+    # configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)-8s %(message)s"
+    )
+
+    exts = {e.strip() for e in args.ext.split(",") if e.strip()}
+    skip_dirs = {d.strip() for d in args.skip.split(",") if d.strip()}
+    skip_files = {f.strip() for f in args.skip_files.split(",") if f.strip()}
+
+    logging.info(f"Starting walk at root: {args.root}")
+    logging.info(f"Including extensions: {sorted(exts)}")
+    logging.info(f"Skipping directories: {sorted(skip_dirs)}")
+    logging.info(f"Skipping files: {sorted(skip_files)}")
+    logging.info(f"Output will be saved to: {args.output}")
+
+    files = list(gather_files(args.root, exts, skip_dirs, skip_files))
+    logging.info(f"Found {len(files)} files to process.")
+
+    total, errors = consolidate(files, args.output)
+    logging.info(f"Consolidated {total} files with {errors} errors.")
+    if errors:
+        logging.warning("Some files could not be read; check warnings above.")
+
+if __name__ == "__main__":
+    main()
+
+
+# ===== FILE: ./.github/workflows/ci.yml =====
+
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - run: composer install --no-interaction --prefer-dist
+      - run: cp .env.example .env
+      - run: composer migrate || true
+      - run: composer test
+      - run: composer stan
+      - run: composer cs
+
+
+# ===== FILE: ./site/index.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kings Walk Week</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body class="min-h-screen">
+  <header class="px-4 py-4 sm:px-6 sm:py-5 sticky top-0 backdrop-blur supports-[backdrop-filter]:bg-[#0b1020]/80 z-30 border-b border-white/10">
+    <div class="max-w-6xl mx-auto flex items-center justify-between gap-3">
+      <div>
+        <div class="kicker">Kings Walk Week</div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold leading-tight">Walk together. Win today.</h1>
+        <p class="text-xs sm:text-sm text-white/70 mt-1">Data comes from a SQLite database. Weeks are finalized by admin; snapshots freeze awards.</p>
+      </div>
+      <div class="hidden sm:flex items-center gap-2">
+        <span id="loadStatus" class="badge">Loading…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <!-- Week Selector -->
+    <section class="card p-3 sm:p-4 shadow-soft">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="space-y-1">
+          <div class="kicker">Week</div>
+          <h2 class="text-lg sm:text-xl font-bold">Select a week</h2>
+          <p class="text-white/70 text-sm">Finalized weeks are read-only (snapshot).</p>
+        </div>
+        <div class="flex items-center gap-3 w-full sm:w-auto">
+          <select id="weekSelector" class="px-2 py-2 rounded bg-white/5 text-sm w-full sm:w-auto"></select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Summary + Awards Row -->
+    <section class="grid-auto-fit">
+      <div class="card p-4 space-y-3">
+        <div class="kicker">Summary</div>
+        <h3 class="text-xl font-bold">Live Leaderboard</h3>
+        <div id="leaderboardPosition" class="text-xs text-white/60 mb-1"></div>
+        <div class="overflow-x-auto">
+          <table id="leaderboard" class="w-full text-sm">
+            <thead class="text-white/70">
+              <tr>
+                <th class="text-left py-2">Rank</th>
+                <th class="text-left py-2 cursor-pointer" data-sort="name">Name</th>
+                <th class="text-right py-2 px-3 cursor-pointer" data-sort="total">Total</th>
+                <th class="text-right py-2 px-3">Avg</th>
+                <th class="text-right py-2 px-3">Best Day</th>
+                <th class="text-right py-2">Days ≥30k</th>
+                <th class="text-right py-2">Days ≥20k</th>
+                <th class="text-right py-2">Days ≥15k</th>
+                <th class="text-right py-2">Days ≥10k</th>
+                <th class="text-right py-2">Days ≥2.5k</th>
+                <th class="text-right py-2">Days ≥1k</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card p-4 space-y-3">
+        <div class="kicker">Awards</div>
+        <h3 class="text-xl font-bold">Badges and Bragging Rights</h3>
+        <ul id="awardsList" class="space-y-2 text-sm"></ul>
+      </div>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid-auto-fit">
+      <div class="card p-4 space-y-3">
+        <div class="kicker">Chart</div>
+        <h3 class="text-xl font-bold">Steps by Day</h3>
+        <canvas id="perDayChart" height="220"></canvas>
+      </div>
+      <div class="card p-4 space-y-3">
+        <div class="kicker">Chart</div>
+        <h3 class="text-xl font-bold">Family Total by Day</h3>
+        <canvas id="stackedTotalChart" height="220"></canvas>
+      </div>
+      <div class="card p-4 space-y-3">
+        <div class="kicker">Chart</div>
+        <h3 class="text-xl font-bold">Trajectories</h3>
+        <canvas id="linesChart" height="220"></canvas>
+      </div>
+    </section>
+
+    <!-- Personal Cards -->
+    <section id="cards" class="grid-auto-fit"></section>
+
+    <!-- Missing Data Callouts -->
+    <section class="card p-4 space-y-3">
+      <div class="kicker">Accountability</div>
+      <h3 class="text-xl font-bold">Missing Check-ins</h3>
+      <ul id="missingList" class="space-y-2 text-sm"></ul>
+      <p class="text-xs text-white/60">Blank = no report. Nudge each other kindly.</p>
+    </section>
+
+    <footer class="py-6 text-center text-xs text-white/60">
+      Built for the King family. Tutu approved.
+    </footer>
+  </main>
+
+  <script type="module" src="/assets/js/app/main.js" defer></script>
+</body>
+</html>
+
+
+# ===== FILE: ./site/lifetime.html =====
+
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Lifetime Steps</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/assets/css/app.css"/>
+</head><body class="min-h-screen">
+<header class="px-4 py-4 border-b border-white/10">
+  <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Lifetime Totals</h1>
+    <a class="text-sm text-blue-300" href="./">← Back to Dashboard</a>
+  </div>
+</header>
+<main class="max-w-6xl mx-auto px-4 py-6">
+  <div id="status" class="text-white/70 mb-3">Loading…</div>
+  <div class="card p-4">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" id="lifeTable">
+        <thead class="text-white/70">
+          <tr><th class="text-left py-2">#</th><th class="text-left py-2">Name</th>
+              <th class="text-left py-2">Tag</th><th class="text-left py-2">Sex</th>
+              <th class="text-right py-2">Age</th><th class="text-right py-2">Weeks</th>
+              <th class="text-right py-2">Total Steps</th></tr>
+        </thead><tbody></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<script>
+(async () => {
+  const base = location.pathname.replace(/site\\/lifetime\\.html$/, '');
+  const res = await fetch(base + 'api/lifetime.php', { cache: 'no-store' });
+  if (!res.ok) { document.getElementById('status').textContent = 'Failed to load'; return; }
+  const json = await res.json();
+  const rows = Array.isArray(json.lifetime) ? json.lifetime : [];
+  document.getElementById('status').textContent = `${rows.length} users`;
+  const tbody = document.querySelector('#lifeTable tbody');
+  tbody.innerHTML = rows.map((r,i)=>`
+    <tr class="border-t border-white/5">
+      <td class="py-2 pr-2">${i+1}</td>
+      <td class="py-2 pr-2">${(r.name||'').replace(/[&<>]/g,c=>({ '&':'&', '<':'<', '>':'>' }[c]))}</td>
+      <td class="py-2 pr-2 text-white/60">${(r.tag||'').replace(/[&<>]/g,c=>({ '&':'&', '<':'<', '>':'>' }[c]))}</td>
+      <td class="py-2 pr-2">${r.sex||''}</td>
+      <td class="py-2 text-right">${r.age??''}</td>
+      <td class="py-2 text-right">${r.weeks_with_data??0}</td>
+      <td class="py-2 text-right">${(r.total_steps||0).toLocaleString()}</td>
+    </tr>`).join('');
+})();
+</script>
+</body></html>
+
+
+# ===== FILE: ./site/config.json =====
+
+{
+  "DAY_ORDER": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+  "GOALS": {
+    "DAILY_GOAL_10K": 10000,
+    "DAILY_GOAL_15K": 15000,
+    "DAILY_GOAL_2_5K": 2500,
+    "DAILY_GOAL_1K": 1000
+  },
+  "THRESHOLDS": {
+    "CHERYL_THRESHOLD": 20000,
+    "THIRTY_K_THRESHOLD": 30000
+  },
+  "AWARD_LIMIT": 1,
+  "DISPLAY_NAME_OVERRIDES": {
+    "Tutu": "Tutu"
+  },
+  "NUDGES": [
+    "Your shoes miss you.",
+    "Take a lap and report back.",
+    "Screenshot the counter tonight.",
+    "Walk-n-talk with the fam, then log it.",
+    "30 minutes. No debate."
+  ],
+  "LEVELS": {
+    "K": 1500,
+    "P": 1.6,
+    "LABEL": "Level"
+  },
+  "CUSTOM_AWARD_LABELS": {
+    "FIRST_30K": "Megan Award",
+    "FIRST_20K": "Cheryl Award",
+    "FIRST_15K": "Dean Award"
+  },
+  "LIFETIME_STEP_MILESTONES": [100000, 250000, 500000, 1000000],
+  "LIFETIME_ATTENDANCE_MILESTONES": [25, 50, 100]
+}
+
+
+# ===== FILE: ./api/send_sms.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require __DIR__.'/lib/env.php';
+require __DIR__.'/util.php';
+header('Content-Type: application/json; charset=utf-8');
+
+$pdo = pdo();
+
+// Internal auth
+$secret = env('INTERNAL_API_SECRET','');
+$hdr = $_SERVER['HTTP_X_INTERNAL_SECRET'] ?? '';
+if ($secret === '' || !hash_equals($secret, $hdr)) { http_response_code(403); echo json_encode(['error'=>'forbidden']); exit; }
+
+// Read params
+$to = $_POST['to'] ?? $_POST['To'] ?? '';
+$body = $_POST['body'] ?? $_POST['Body'] ?? '';
+
+if ($to === '' || $body === '') { http_response_code(400); echo json_encode(['error'=>'missing to/body']); exit; }
+
+// Env
+$sid  = env('TWILIO_ACCOUNT_SID','');
+$tok  = env('TWILIO_AUTH_TOKEN','');
+$from = env('TWILIO_FROM_NUMBER','');
+if ($sid==='' || $tok==='' || $from==='') { http_response_code(500); echo json_encode(['error'=>'twilio env missing']); exit; }
+
+// Build request
+$url = "https://api.twilio.com/2010-04-01/Accounts/{$sid}/Messages.json";
+$post = http_build_query(['From'=>$from,'To'=>$to,'Body'=>$body]);
+
+$ch = curl_init($url);
+curl_setopt_array($ch, [
+  CURLOPT_POST => true,
+  CURLOPT_POSTFIELDS => $post,
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_USERPWD => $sid.':'.$tok,
+  CURLOPT_TIMEOUT => 15,
+]);
+$resp = curl_exec($ch);
+$code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+$err  = curl_error($ch);
+curl_close($ch);
+
+// Audit
+$ins = $pdo->prepare("INSERT INTO sms_outbound_audit(created_at,to_number,body,http_code,sid,error) VALUES(datetime('now'),?,?,?,?,?)");
+$sidResp = null;
+if ($code===201 && $resp) {
+  $j = json_decode($resp, true);
+  $sidResp = $j['sid'] ?? null;
+}
+$auditParams = [ $to, $body, $code, $sidResp, $err ?: (($code===201)?null:($resp ?: null)) ];
+for ($i = 0; $i < 5; $i++) {
+  try { $ins->execute($auditParams); break; }
+  catch (PDOException $e) {
+    $m = $e->getMessage();
+    if (stripos($m, 'locked') !== false || stripos($m, 'SQLITE_BUSY') !== false) { usleep(200000); continue; }
+    throw $e;
+  }
+}
+
+if ($code===201) { echo json_encode(['ok'=>true,'sid'=>$sidResp]); }
+else { http_response_code(502); echo json_encode(['error'=>'twilio_failed','code'=>$code,'detail'=>$err ?: $resp]); }
+
+
+# ===== FILE: ./api/sms.php =====
+
+<?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require __DIR__.'/util.php';
+require __DIR__.'/lib/env.php';
+require __DIR__.'/lib/phone.php';
+require __DIR__.'/lib/dates.php';
+require __DIR__.'/lib/entries.php';
+require __DIR__.'/lib/twilio.php';
+header('Content-Type: text/plain; charset=utf-8');
+
+$secret = env('INTERNAL_API_SECRET','');
+$is_local = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1','::1']);
+$has_secret = $secret !== '' && (isset($_SERVER['HTTP_X_INTERNAL_SECRET']) && hash_equals($secret, $_SERVER['HTTP_X_INTERNAL_SECRET']));
+$is_internal = $is_local || $has_secret;
+
+$pdo = pdo();
+$from = $_POST['From'] ?? '';
+$body = trim($_POST['Body'] ?? '');
+$e164 = to_e164($from);
+$now  = now_in_tz();
+$createdAt = $now->format(DateTime::ATOM);
+
+$insAudit = $pdo->prepare("INSERT INTO sms_audit(created_at,from_number,raw_body,parsed_day,parsed_steps,resolved_week,resolved_day,status) VALUES(?,?,?,?,?,?,?,?)");
+
+$audit_exec = function(array $params) use ($insAudit) {
+  with_file_lock(__DIR__ . '/../data/sqlite.write.lock', function() use ($insAudit, $params) {
+    for ($i = 0; $i < 5; $i++) {
+      try { $insAudit->execute($params); return; }
+      catch (PDOException $e) {
+        $m = $e->getMessage();
+        if (stripos($m, 'locked') !== false || stripos($m, 'SQLITE_BUSY') !== false) { usleep(200000); continue; }
+        throw $e;
+      }
+    }
+  });
+};
+
+function with_txn_retry(PDO $pdo, callable $fn) {
+  $retries = 8;
+  $delayUs = 150000; // 150 ms
+  for ($i = 0; $i < $retries; $i++) {
+    try {
+      with_file_lock(__DIR__ . '/../data/sqlite.write.lock', function() use ($pdo, $fn) {
+        $pdo->exec('BEGIN IMMEDIATE');
+        $fn();
+        $pdo->exec('COMMIT');
+      });
+      return;
+    } catch (PDOException $e) {
+      try { $pdo->exec('ROLLBACK'); } catch (Throwable $_) {}
+      $m = $e->getMessage();
+      if (stripos($m, 'locked') !== false || stripos($m, 'SQLITE_BUSY') !== false) {
+        usleep($delayUs);
+        $delayUs = min((int)($delayUs * 1.6), 800000);
+        continue;
+      }
+      throw $e;
+    }
+  }
+  throw new RuntimeException('DB busy after retries');
+}
+
+$auth = env('TWILIO_AUTH_TOKEN','');
+if (!$is_internal && $auth !== '') {
+  $url = (isset($_SERVER['HTTPS'])?'https':'http').'://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'];
+  $ok  = verify_twilio_signature($auth, $url, $_POST, $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? null);
+  if (!$ok) { $audit_exec([$createdAt,$e164,$body,null,null,null,null,'bad_signature']); http_response_code(403); echo "Forbidden."; exit; }
+}
+
+if (!$e164 || $body==='') {
+  $audit_exec([$createdAt,$from,$body,null,null,null,null,'bad_request']);
+  http_response_code(400); echo "Bad request."; exit;
+}
+
+# rate limit 60s per number on last ok
+$cut = (clone $now)->modify('-60 seconds')->format(DateTime::ATOM);
+$stRL = $pdo->prepare("SELECT 1 FROM sms_audit WHERE from_number=? AND status='ok' AND created_at>=? LIMIT 1");
+$stRL->execute([$e164, $cut]);
+if ($stRL->fetchColumn()) {
+  $audit_exec([$createdAt,$e164,$body,null,null,null,null,'rate_limited']);
+  http_response_code(429); echo "Slow down. Try again in a minute."; exit;
+}
+
+# parse input with single numeric group rule
+// Preserve original text for audits
+$raw_body = $body;
+// Normalize thousands separators that appear between digit groups (commas, dots, and various spaces).
+// This converts "12,345", "12 345", "12.345" -> "12345" but does NOT remove commas that separate distinct numbers like "3, 4".
+$body_norm = preg_replace('/(?<=\d)[\p{Zs}\x{00A0}\x{202F},\.](?=\d{3}\b)/u', '', $body);
+$body_norm = trim($body_norm);
+
+if (preg_match_all('/\d+/', $body_norm, $mm) && count($mm[0]) > 1) {
+  $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'too_many_numbers']);
+  http_response_code(400); echo "Send one number like 12345 or 'Tue 12345'."; exit;
+}
+
+$dayOverride = null; $steps = null;
+if (preg_match('/^\s*([A-Za-z]{3,9})\b\D*([0-9]{2,})\s*$/', $body_norm, $m)) { $dayOverride=$m[1]; $steps=intval($m[2]); }
+elseif (preg_match('/^\s*([0-9]{2,})\s*$/', $body_norm, $m)) { $steps=intval($m[1]); }
+else { $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'no_steps']); http_response_code(400); echo "Send one number like 12345 or 'Tue 12345'."; exit; }
+
+if ($steps < 0 || $steps > 200000) { $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'invalid_steps']); http_response_code(400); echo "Invalid steps."; exit; }
+
+$stU = $pdo->prepare("SELECT name FROM users WHERE phone_e164=?");
+$stU->execute([$e164]);
+$u = $stU->fetch(PDO::FETCH_ASSOC);
+if (!$u) { $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'unknown_number']); echo "Number not recognized. Ask admin to enroll your phone."; exit; }
+$name = $u['name'];
+
+$dayCol = resolve_target_day($now, $dayOverride);
+if (!$dayCol) { $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'bad_day']); http_response_code(400); echo "Unrecognized day. Use Mon..Sat or leave it out."; exit; }
+
+$week = resolve_active_week($pdo);
+if (!$week) { $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,$dayCol,'no_active_week']); echo "No active week."; exit; }
+
+with_txn_retry($pdo, function() use ($pdo, $week, $name, $dayCol, $steps) {
+  upsert_steps($pdo, $week, $name, $dayCol, $steps);
+});
+$audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
+
+$noonRule = !$dayOverride ? (intval($now->format('H'))<12 ? 'yesterday' : 'today') : strtolower($dayCol);
+echo "Recorded ".number_format($steps)." for $name on $noonRule.";
+
+
+# ===== FILE: ./api/family_weekday_avg.php =====
+
+<?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/util.php';  // provides pdo()
+
+header('Content-Type: application/json');
+
+try {
+  $db = pdo();
+
+  // 1) For each week, sum family totals per day
+  // 2) Average those weekly sums across weeks
+  $sql = "
+    WITH week_sums AS (
+      SELECT
+        week,
+        SUM(COALESCE(monday,0))    AS mon,
+        SUM(COALESCE(tuesday,0))   AS tue,
+        SUM(COALESCE(wednesday,0)) AS wed,
+        SUM(COALESCE(thursday,0))  AS thu,
+        SUM(COALESCE(friday,0))    AS fri,
+        SUM(COALESCE(saturday,0))  AS sat
+      FROM entries
+      GROUP BY week
+    )
+    SELECT
+      ROUND(AVG(mon)) AS mon_avg,
+      ROUND(AVG(tue)) AS tue_avg,
+      ROUND(AVG(wed)) AS wed_avg,
+      ROUND(AVG(thu)) AS thu_avg,
+      ROUND(AVG(fri)) AS fri_avg,
+      ROUND(AVG(sat)) AS sat_avg
+    FROM week_sums
+  ";
+
+  $avg = $db->query($sql)->fetch(PDO::FETCH_ASSOC);
+
+  echo json_encode([
+    "labels" => ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+    "averages" => [
+      intval($avg['mon_avg'] ?? 0),
+      intval($avg['tue_avg'] ?? 0),
+      intval($avg['wed_avg'] ?? 0),
+      intval($avg['thu_avg'] ?? 0),
+      intval($avg['fri_avg'] ?? 0),
+      intval($avg['sat_avg'] ?? 0),
+    ]
+  ], JSON_UNESCAPED_SLASHES);
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(["error" => "weekday_avg_failed", "message" => $e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/_sig_diag.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
+/**
+/**
+ * Diagnostic endpoint for Twilio signature verification.
+ * Only active when TWILIO_SIG_DEBUG=== '1'.
+ * Requires either ?once=<ts> OR header X-Diag-Token matching env TWILIO_DIAG_TOKEN.
+ *
+ * Outputs JSON:
+ * {
+ *  "url_seen": "...",
+ *  "post_sorted": [ "From:+1801...", "MessageSid:...", ... ],
+ *  "joined": "...",
+ *  "expected_sig": "...",
+ *  "header_sig": "...",
+ *  "match": true|false
+ * }
+ */
+
+if (getenv('TWILIO_SIG_DEBUG') !== '1') {
+  http_response_code(404);
+  echo 'Not found';
+  exit;
+}
+
+$once = $_GET['once'] ?? null;
+$diagHeader = $_SERVER['HTTP_X_DIAG_TOKEN'] ?? '';
+$diagToken = getenv('TWILIO_DIAG_TOKEN') ?: '';
+
+if (!$once && ($diagToken === '' || $diagHeader !== $diagToken)) {
+  http_response_code(403);
+  echo 'Forbidden';
+  exit;
+}
+
+require_once __DIR__ . '/common_sig.php';
+
+$headerSig = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
+
+$info = twilio_verify($_POST, $headerSig, getenv('TWILIO_AUTH_TOKEN') ?: '');
+
+// build post_sorted array "Key:Value"
+$post_sorted = [];
+$keys = array_keys($_POST);
+sort($keys, SORT_STRING);
+foreach ($keys as $k) {
+  $post_sorted[] = $k . ':' . ($_POST[$k] ?? '');
+}
+
+$out = [
+  'url_seen' => $info['url'],
+  'post_sorted' => $post_sorted,
+  'joined' => $info['joined'],
+  'expected' => $info['expected'],
+  'header_sig' => $info['header'] ?? '',
+  'match' => (bool)$info['match'],
+];
+
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode($out, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+
+# ===== FILE: ./api/migrate.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/db.php';
+
+/* tables:
+   - weeks(week PK, label, finalized, created_at, finalized_at)
+   - entries(id PK, week, name, monday..saturday, sex, age, tag, updated_at)
+   - snapshots(week PK FK->weeks.week, json, created_at)
+*/
+
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS weeks (
+  week TEXT PRIMARY KEY,
+  label TEXT,
+  finalized INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  finalized_at TEXT
+);
+");
+
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  week TEXT NOT NULL,
+  name TEXT NOT NULL,
+  monday INTEGER CHECK(monday IS NULL OR monday >= 0),
+  tuesday INTEGER CHECK(tuesday IS NULL OR tuesday >= 0),
+  wednesday INTEGER CHECK(wednesday IS NULL OR wednesday >= 0),
+  thursday INTEGER CHECK(thursday IS NULL OR thursday >= 0),
+  friday INTEGER CHECK(friday IS NULL OR friday >= 0),
+  saturday INTEGER CHECK(saturday IS NULL OR saturday >= 0),
+  sex TEXT,
+  age INTEGER,
+  tag TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  CONSTRAINT fk_entries_week FOREIGN KEY (week) REFERENCES weeks(week) ON DELETE CASCADE
+);
+");
+
+// Add per-day first-report timestamp columns (nullable integers) if missing.
+// These store the unix epoch seconds (UTC) for the first time a day's value
+// was set to a positive integer for a given week/name.
+$cols = $pdo->query("PRAGMA table_info(entries)")->fetchAll(PDO::FETCH_ASSOC);
+$colNames = array_map(function($c){ return $c['name'] ?? ''; }, $cols);
+$reportCols = [
+  'mon_reported_at','tue_reported_at','wed_reported_at',
+  'thu_reported_at','fri_reported_at','sat_reported_at'
+];
+foreach ($reportCols as $c) {
+  if (!in_array($c, $colNames, true)) {
+    // ALTER TABLE ADD COLUMN is safe and idempotent when guarded above.
+    $pdo->exec("ALTER TABLE entries ADD COLUMN $c INTEGER");
+  }
+}
+
+// Create triggers to set the reported_at timestamp only the first time a day
+// transitions from NULL/0 to a positive integer. We create an AFTER INSERT
+// trigger (for new rows) and an AFTER UPDATE OF <day> trigger (for updates).
+$days = [
+  ['day'=>'monday','rep'=>'mon_reported_at'],
+  ['day'=>'tuesday','rep'=>'tue_reported_at'],
+  ['day'=>'wednesday','rep'=>'wed_reported_at'],
+  ['day'=>'thursday','rep'=>'thu_reported_at'],
+  ['day'=>'friday','rep'=>'fri_reported_at'],
+  ['day'=>'saturday','rep'=>'sat_reported_at']
+];
+
+$stmtExists = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name = ? LIMIT 1");
+foreach ($days as $d) {
+  $day = $d['day']; $rep = $d['rep'];
+  // UPDATE trigger
+  $trgUpd = "trg_entries_set_{$day}_reported_at_update";
+  $stmtExists->execute([$trgUpd]);
+  if (!$stmtExists->fetchColumn()) {
+    $sql = "
+    CREATE TRIGGER $trgUpd
+    AFTER UPDATE OF $day ON entries
+    WHEN NEW.$day IS NOT NULL AND (OLD.$day IS NULL OR OLD.$day = 0) AND NEW.$day != OLD.$day AND NEW.$rep IS NULL
+    BEGIN
+      UPDATE entries SET $rep = CAST(strftime('%s','now') AS INTEGER)
+      WHERE week = NEW.week AND name = NEW.name;
+    END;
+    ";
+    $pdo->exec($sql);
+  }
+
+  // INSERT trigger
+  $trgIns = "trg_entries_set_{$day}_reported_at_insert";
+  $stmtExists->execute([$trgIns]);
+  if (!$stmtExists->fetchColumn()) {
+    $sql2 = "
+    CREATE TRIGGER $trgIns
+    AFTER INSERT ON entries
+    WHEN NEW.$day IS NOT NULL AND NEW.$day > 0 AND NEW.$rep IS NULL
+    BEGIN
+      UPDATE entries SET $rep = CAST(strftime('%s','now') AS INTEGER)
+      WHERE week = NEW.week AND name = NEW.name;
+    END;
+    ";
+    $pdo->exec($sql2);
+  }
+}
+
+/* Do a quick integrity check; log problems but do not echo to output.
+   We avoid ALTER TABLE for existing installs to keep migration safe on Pi.
+   New installs will get the CHECK constraints above. */
+try {
+  $res = $pdo->query("PRAGMA integrity_check")->fetchColumn();
+  if ($res !== 'ok') {
+    error_log("migrate.php: PRAGMA integrity_check returned: " . $res);
+  }
+} catch (Throwable $e) {
+  error_log("migrate.php: integrity_check failed: " . $e->getMessage());
+}
+
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_entries_week_name ON entries(week, name);");
+$pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS entries_week_name_uq ON entries(week, name);");
+
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS snapshots (
+  week TEXT PRIMARY KEY,
+  json TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  CONSTRAINT fk_snapshots_week FOREIGN KEY (week) REFERENCES weeks(week) ON DELETE CASCADE
+);
+");
+
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  sex TEXT,
+  age INTEGER,
+  tag TEXT
+);
+");
+
+$pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_name_uq ON users(name)");
+$cols = $pdo->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_ASSOC);
+
+// phone_e164 (idempotent)
+$hasPhone = false;
+foreach ($cols as $c) { if (isset($c['name']) && $c['name'] === 'phone_e164') { $hasPhone = true; break; } }
+if (!$hasPhone) { $pdo->exec("ALTER TABLE users ADD COLUMN phone_e164 TEXT"); }
+
+// photo_path and photo_consent (idempotent)
+$hasPhotoPath = false;
+$hasPhotoConsent = false;
+foreach ($cols as $c) {
+  if (isset($c['name'])) {
+    if ($c['name'] === 'photo_path') $hasPhotoPath = true;
+    if ($c['name'] === 'photo_consent') $hasPhotoConsent = true;
+  }
+}
+if (!$hasPhotoPath) { $pdo->exec("ALTER TABLE users ADD COLUMN photo_path TEXT"); }
+if (!$hasPhotoConsent) { $pdo->exec("ALTER TABLE users ADD COLUMN photo_consent INTEGER DEFAULT 0"); }
+
+$pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_e164_uq ON users(phone_e164)");
+
+// AI scaffolding: idempotent tables, columns, and indexes for offline AI features.
+// - app_settings
+// - additional users columns: ai_opt_in, interests, rival_id
+// - user_ai_profile
+// - ai_messages (+ indexes)
+// - ai_awards (+ index)
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+");
+
+// Add new user columns if missing (idempotent)
+$cols = $pdo->query("PRAGMA table_info(users)")->fetchAll(PDO::FETCH_ASSOC);
+$colNames = array_map(function($c){ return $c['name'] ?? ''; }, $cols);
+
+if (!in_array('ai_opt_in', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN ai_opt_in INTEGER DEFAULT 0");
+}
+if (!in_array('interests', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN interests TEXT");
+}
+if (!in_array('rival_id', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN rival_id INTEGER");
+}
+
+// Per-user AI profile table
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS user_ai_profile (
+  user_id INTEGER PRIMARY KEY,
+  tone TEXT,
+  fun_facts TEXT,
+  do_not_use TEXT,
+  last_reviewed_at TEXT,
+  CONSTRAINT fk_user_ai_profile_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+");
+
+// AI-generated messages tracking
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id INTEGER PRIMARY KEY,
+  type TEXT NOT NULL,
+  scope_key TEXT,
+  user_id INTEGER,
+  week TEXT,
+  content TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_hash TEXT,
+  approved_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  sent_at TEXT,
+  CONSTRAINT fk_ai_messages_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_messages_week ON ai_messages(week);");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_messages_user ON ai_messages(user_id);");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_messages_sendable ON ai_messages(approved_by, sent_at);");
+
+// AI awards / milestones
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS ai_awards (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  milestone_value INTEGER NOT NULL,
+  week TEXT,
+  image_path TEXT,
+  meta TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  CONSTRAINT fk_ai_awards_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+");
+$pdo->exec("CREATE INDEX IF NOT EXISTS idx_ai_awards_user ON ai_awards(user_id);");
+
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS sms_audit(
+  id INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  from_number TEXT NOT NULL,
+  raw_body TEXT NOT NULL,
+  parsed_day TEXT,
+  parsed_steps INTEGER,
+  resolved_week TEXT,
+  resolved_day TEXT,
+  status TEXT
+);
+");
+$pdo->exec("CREATE TABLE IF NOT EXISTS sms_outbound_audit(
+  id INTEGER PRIMARY KEY,
+  created_at TEXT,
+  to_number TEXT,
+  body TEXT,
+  http_code INTEGER,
+  sid TEXT,
+  error TEXT
+)");
+
+/* Backfill users from distinct entry names, if not already present */
+$pdo->exec("
+INSERT INTO users(name, sex, age, tag)
+SELECT e.name,
+       (SELECT sex FROM entries e2 WHERE e2.name=e.name AND e2.sex IS NOT NULL ORDER BY updated_at DESC LIMIT 1),
+       (SELECT age FROM entries e2 WHERE e2.name=e.name AND e2.age IS NOT NULL ORDER BY updated_at DESC LIMIT 1),
+       (SELECT tag FROM entries e2 WHERE e2.name=e.name AND e2.tag IS NOT NULL ORDER BY updated_at DESC LIMIT 1)
+FROM (SELECT DISTINCT name FROM entries WHERE name IS NOT NULL AND name != '') e
+WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.name = e.name);
+");
+
+$pdo->exec("
+CREATE VIEW IF NOT EXISTS lifetime_stats AS
+SELECT
+  u.name AS name,
+  COALESCE(u.sex, '') AS sex,
+  u.age AS age,
+  COALESCE(u.tag, '') AS tag,
+  COALESCE((
+    SELECT SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0))
+    FROM entries e WHERE e.name = u.name
+  ),0) AS total_steps,
+  COALESCE((
+    SELECT COUNT(1)
+    FROM entries e WHERE e.name = u.name AND (
+      COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0)
+    ) > 0
+  ),0) AS weeks_with_data
+FROM users u
+WHERE u.is_active = 1
+ORDER BY total_steps DESC, name ASC;
+");
+
+
+# ===== FILE: ./api/ai_delete_message.php =====
+
+<?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/lib/admin_auth.php';
+require_once __DIR__ . '/lib/tx.php';
+require_admin();
+
+header('Content-Type: application/json');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['error'=>'method']); exit; }
+
+$id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+if ($id <= 0) { http_response_code(400); echo json_encode(['error'=>'bad id']); exit; }
+
+try {
+  with_txn_retry(function($pdo) use ($id) {
+    $stmt = $pdo->prepare('DELETE FROM ai_messages WHERE id = ? AND sent_at IS NULL');
+    $stmt->execute([$id]);
+  });
+  echo json_encode(['ok'=>true]);
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error'=>'delete_failed','message'=>$e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/ai_rules.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+header('Content-Type: application/json; charset=utf-8');
+
+try {
+  require_once __DIR__ . '/db.php';
+  ob_start(); require_once __DIR__ . '/migrate.php'; ob_end_clean();
+  require_once __DIR__ . '/lib/admin_auth.php';
+  require_admin();
+
+  if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['error' => 'POST required']);
+    exit;
+  }
+
+  $week = trim((string)($_POST['week'] ?? ''));
+  if ($week === '') {
+    // pick latest week
+    $week = (string)($pdo->query("SELECT week FROM weeks ORDER BY week DESC LIMIT 1")->fetchColumn() ?? '');
+  }
+  if ($week === '') {
+    http_response_code(400);
+    echo json_encode(['error' => 'No week available']);
+    exit;
+  }
+
+  // Load users
+  $usersRaw = $pdo->query("SELECT id, name, rival_id FROM users")->fetchAll(PDO::FETCH_ASSOC);
+  $users = [];
+  foreach ($usersRaw as $u) {
+    $users[(int)$u['id']] = ['id'=>(int)$u['id'], 'name'=>$u['name'], 'rival_id'=> ($u['rival_id']===null?null:(int)$u['rival_id'])];
+  }
+
+  // Helper to compute a week's total for a given user name
+  $getWeekTotalStmt = $pdo->prepare("SELECT COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0) AS total,
+    (CASE WHEN monday IS NULL OR monday = 0 THEN 1 ELSE 0 END)
+    + (CASE WHEN tuesday IS NULL OR tuesday = 0 THEN 1 ELSE 0 END)
+    + (CASE WHEN wednesday IS NULL OR wednesday = 0 THEN 1 ELSE 0 END)
+    + (CASE WHEN thursday IS NULL OR thursday = 0 THEN 1 ELSE 0 END)
+    + (CASE WHEN friday IS NULL OR friday = 0 THEN 1 ELSE 0 END)
+    + (CASE WHEN saturday IS NULL OR saturday = 0 THEN 1 ELSE 0 END) AS missing_days
+    FROM entries WHERE week = :week AND name = :name LIMIT 1");
+
+  // Load totals for target week (map by user_id)
+  $totals = [];
+  foreach ($users as $uid => $u) {
+    $getWeekTotalStmt->execute([':week'=>$week, ':name'=>$u['name']]);
+    $row = $getWeekTotalStmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $totals[$uid] = ['total' => (int)$row['total'], 'missing_days' => (int)$row['missing_days']];
+    } else {
+      // no entry -> total 0, missing_days = 6
+      $totals[$uid] = ['total' => 0, 'missing_days' => 6];
+    }
+  }
+
+  // Compute historical best per user (max single-week total)
+  $bestStmt = $pdo->prepare("SELECT MAX(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0)) AS best
+    FROM entries WHERE name = :name");
+  $bests = [];
+  foreach ($users as $uid => $u) {
+    $bestStmt->execute([':name'=>$u['name']]);
+    $bests[$uid] = (int)($bestStmt->fetchColumn() ?? 0);
+  }
+
+  // Determine prior week (if any)
+  $priorWeek = (string)($pdo->prepare("SELECT week FROM weeks WHERE week < :week ORDER BY week DESC LIMIT 1")->execute([':week'=>$week]) ?: '');
+  $priorWeekRow = $pdo->prepare("SELECT week FROM weeks WHERE week < :week ORDER BY week DESC LIMIT 1");
+  $priorWeekRow->execute([':week'=>$week]);
+  $priorWeek = (string)($priorWeekRow->fetchColumn() ?? '');
+
+  $priorTotals = [];
+  if ($priorWeek !== '') {
+    foreach ($users as $uid => $u) {
+      $getWeekTotalStmt->execute([':week'=>$priorWeek, ':name'=>$u['name']]);
+      $row = $getWeekTotalStmt->fetch(PDO::FETCH_ASSOC);
+      $priorTotals[$uid] = $row ? (int)$row['total'] : 0;
+    }
+  }
+
+  // Build ranking for top3 for this week
+  $rank = [];
+  foreach ($users as $uid => $u) {
+    $rank[] = ['id'=>$uid, 'name'=>$u['name'], 'total'=>$totals[$uid]['total']];
+  }
+  usort($rank, function($a,$b){ return $b['total'] <=> $a['total'] ?: strcmp($a['name'],$b['name']); });
+  $top3 = array_slice($rank, 0, 3);
+
+  // Compute most improved
+  $mostImproved = null; // ['id'=>, 'name'=>, 'delta'=>]
+  if ($priorWeek !== '') {
+    foreach ($users as $uid => $u) {
+      $delta = $totals[$uid]['total'] - ($priorTotals[$uid] ?? 0);
+      if ($mostImproved === null || $delta > $mostImproved['delta']) {
+        $mostImproved = ['id'=>$uid, 'name'=>$u['name'], 'delta'=>$delta];
+      }
+    }
+    if ($mostImproved !== null && $mostImproved['delta'] <= 0) $mostImproved = null;
+  }
+
+  // Build missing list
+  $missingList = [];
+  foreach ($users as $uid => $u) {
+    $md = $totals[$uid]['missing_days'];
+    if ($md > 0) $missingList[] = ['name'=>$u['name'], 'missing'=>$md];
+  }
+
+  // Load ai_messages rows to update
+  $q = $pdo->prepare("SELECT id, type, user_id FROM ai_messages WHERE model = 'rules-v0' AND (content = '' OR content IS NULL) AND week = :week");
+  $q->execute([':week'=>$week]);
+  $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+
+  $updateStmt = $pdo->prepare("UPDATE ai_messages SET content = :content WHERE id = :id");
+
+  $updated = 0;
+  foreach ($rows as $r) {
+    $id = (int)$r['id'];
+    $type = (string)$r['type'];
+    $user_id = $r['user_id'] !== null ? (int)$r['user_id'] : null;
+    $content = '';
+
+    if ($type === 'nudge' && $user_id !== null && isset($users[$user_id])) {
+      $name = $users[$user_id]['name'] ?? 'You';
+      $userTotal = $totals[$user_id]['total'] ?? 0;
+      $userBest = $bests[$user_id] ?? 0;
+      $deltaBest = $userBest - $userTotal;
+      if ($deltaBest < 0) $deltaBest = 0;
+      $deltaBestText = number_format($deltaBest, 0, '.', ',');
+
+      // Rival sentence
+      $rivalSentence = '';
+      $gap = null;
+      $rivalId = $users[$user_id]['rival_id'] ?? null;
+      if ($rivalId !== null && isset($users[$rivalId])) {
+        $rivalTotal = $totals[$rivalId]['total'] ?? 0;
+        $gap = $rivalTotal - $userTotal;
+        if ($gap < 0) $gap = 0;
+        if ($gap > 0) {
+          $rivalName = $users[$rivalId]['name'] ?? '';
+          $rivalSentence = "{$rivalName} is {$gap} ahead.";
+        }
+      } else {
+        // find nearest higher total
+        $found = null;
+        foreach ($rank as $candidate) {
+          if ($candidate['id'] === $user_id) continue;
+          if ($candidate['total'] > $userTotal) { $found = $candidate; break; }
+        }
+        if ($found) {
+          $gap = $found['total'] - $userTotal;
+          if ($gap < 0) $gap = 0;
+          if ($gap > 0) $rivalSentence = "{$found['name']} is {$gap} ahead.";
+        }
+      }
+
+      $parts = [];
+      $parts[] = "{$name}, you're {$deltaBestText} from your weekly best.";
+      if ($rivalSentence !== '') $parts[] = $rivalSentence;
+      $parts[] = "One solid day puts you back in it.";
+      $content = trim(preg_replace('/\s+/', ' ', implode(' ', $parts)));
+
+      // Clamp length to 160 (use mb_* when available, fall back to byte-safe functions)
+      if (function_exists('mb_strlen')) {
+        if (mb_strlen($content) > 160) {
+          $content = mb_substr($content, 0, 157) . '...';
+        }
+      } else {
+        if (strlen($content) > 160) {
+          $content = substr($content, 0, 157) . '...';
+        }
+      }
+
+    } elseif ($type === 'recap') {
+      $pieces = [];
+      // Top 3
+      $tops = [];
+      foreach ($top3 as $i => $t) {
+        $rankNo = $i + 1;
+        $tops[] = "{$rankNo} {$t['name']} {$t['total']}";
+      }
+      $pieces[] = 'Top: ' . implode(', ', $tops) . '.';
+
+      // Most improved
+      if ($mostImproved !== null) {
+        $pieces[] = "Most improved: {$mostImproved['name']}+{$mostImproved['delta']}.";
+      }
+
+      // Missing
+      if (count($missingList) > 0) {
+        $missStr = [];
+        foreach ($missingList as $m) {
+          $missStr[] = "{$m['name']}({$m['missing']})";
+        }
+        $pieces[] = 'Missing: ' . implode(', ', $missStr) . '.';
+      }
+
+      $content = trim(preg_replace('/\s+/', ' ', implode(' ', $pieces)));
+      if (function_exists('mb_strlen')) {
+        if (mb_strlen($content) > 1000) {
+          $content = mb_substr($content, 0, 997) . '...';
+        }
+      } else {
+        if (strlen($content) > 1000) {
+          $content = substr($content, 0, 997) . '...';
+        }
+      }
+    } else {
+      // Unknown type or missing user -> skip
+      continue;
+    }
+
+    // Update row
+    $updateStmt->execute([':content'=>$content, ':id'=>$id]);
+    $updated++;
+  }
+
+  echo json_encode(['updated'=>$updated, 'week'=>$week]);
+
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error' => $e->getMessage()]);
+  exit;
+}
+
+
+# ===== FILE: ./api/lifetime.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/db.php';
+header('Content-Type: application/json; charset=utf-8');
+
+try {
+  $sql = "
+  SELECT
+    u.name,
+    u.sex,
+    u.age,
+    u.tag,
+    COUNT(DISTINCT e.week) AS weeks_with_data,
+    COALESCE(SUM(
+      COALESCE(e.monday,0)+COALESCE(e.tuesday,0)+COALESCE(e.wednesday,0)+
+      COALESCE(e.thursday,0)+COALESCE(e.friday,0)+COALESCE(e.saturday,0)
+    ),0) AS total_steps,
+    COALESCE(SUM(
+      (e.monday IS NOT NULL)+(e.tuesday IS NOT NULL)+(e.wednesday IS NOT NULL)+
+      (e.thursday IS NOT NULL)+(e.friday IS NOT NULL)+(e.saturday IS NOT NULL)
+    ),0) AS total_days,
+    COALESCE(MAX((
+      SELECT MAX(v) FROM (
+        SELECT COALESCE(e.monday,0) AS v
+        UNION ALL SELECT COALESCE(e.tuesday,0)
+        UNION ALL SELECT COALESCE(e.wednesday,0)
+        UNION ALL SELECT COALESCE(e.thursday,0)
+        UNION ALL SELECT COALESCE(e.friday,0)
+        UNION ALL SELECT COALESCE(e.saturday,0)
+      )
+    )),0) AS lifetime_best
+  FROM users u
+  LEFT JOIN entries e ON e.name = u.name
+  GROUP BY u.name
+  ORDER BY u.name COLLATE NOCASE
+  ";
+  $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+  foreach ($rows as &$r) {
+    $r['weeks_with_data'] = (int)($r['weeks_with_data'] ?? 0);
+    $r['total_steps'] = (int)($r['total_steps'] ?? 0);
+    $r['total_days'] = (int)($r['total_days'] ?? 0);
+    $r['lifetime_best'] = (int)($r['lifetime_best'] ?? 0);
+    $r['lifetime_avg'] = $r['total_days'] > 0 ? (int)round($r['total_steps'] / $r['total_days']) : 0;
+  }
+  unset($r);
+
+  echo json_encode(['lifetime' => $rows], JSON_UNESCAPED_SLASHES);
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error'=>$e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/common_sig.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
+/**
+ * Build the URL Twilio would have seen for signature verification.
+ * Uses X-Forwarded headers when present (for Cloudflare / proxies).
+ */
+function twilio_seen_url(): string {
+  // Scheme: prefer X-Forwarded-Proto if it's present and valid
+  if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+    $proto = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_PROTO'])[0]);
+    if ($proto === 'https' || $proto === 'http') {
+      $scheme = $proto;
+    } else {
+      $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    }
+  } else {
+    $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+  }
+
+  // Host: prefer X-Forwarded-Host if present, else HTTP_HOST.
+  $host = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? ($_SERVER['HTTP_HOST'] ?? '');
+  if (strpos($host, ',') !== false) {
+    $host = trim(explode(',', $host)[0]);
+  }
+
+  // Path: use the path portion of REQUEST_URI (no query string)
+  $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+
+  return $scheme . '://' . $host . $path;
+}
+
+/**
+ * Verify Twilio signature and return diagnostic info.
+ * - $post: POST params as-assoc
+ * - $headerSig: value from X-Twilio-Signature header
+ * - $authToken: Twilio auth token
+ *
+ * Returns array: ['url','joined','expected','header','match']
+ */
+function twilio_verify(array $post, string $headerSig, string $authToken): array {
+  // Sort by key using string sort
+  ksort($post, SORT_STRING);
+
+  $url = twilio_seen_url();
+
+  // Build joined string: url + concat(key . value) for sorted keys
+  $joinedParts = array_map(function($k) use ($post) { return $k . ($post[$k] ?? ''); }, array_keys($post));
+  $joined = $url . implode('', $joinedParts);
+
+  // HMAC-SHA1 and base64 encode
+  $expected = base64_encode(hash_hmac('sha1', $joined, $authToken, true));
+  $match = hash_equals($expected, $headerSig ?? '');
+
+  return [
+    'url' => $url,
+    'joined' => $joined,
+    'expected' => $expected,
+    'header' => $headerSig ?? '',
+    'match' => $match,
+  ];
+}
+
+/**
+ * When running local tests or when TWILIO_TEST_MODE=1, allow unsigned requests.
+ * Also allow some safe local IPs.
+ */
+function twilio_should_skip(): bool {
+  if (getenv('TWILIO_TEST_MODE') === '1') return true;
+  $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+  return in_array($remote, ['127.0.0.1','::1','192.168.0.134'], true);
+}
+
+
+# ===== FILE: ./api/db.php =====
+
+<?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/../vendor/autoload.php';
+App\Core\Env::bootstrap(dirname(__DIR__));
+
+function pdo(): PDO {
+  return App\Config\DB::pdo();
+}
+
+// Provide legacy $pdo variable for scripts that expect a global $pdo
+$pdo = pdo();
+
+
+# ===== FILE: ./api/data.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+header('Content-Type: application/json; charset=utf-8');
+// TEMP DEBUG (remove after fix)
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+
+  try {
+  require_once __DIR__ . '/db.php';
+
+  $week = $_GET['week'] ?? null;
+  if (!$week) {
+    $week = $pdo->query("SELECT week FROM weeks ORDER BY week DESC LIMIT 1")->fetchColumn();
+    if (!$week) { echo json_encode(['week'=>null,'rows'=>[],'finalized'=>0,'source'=>'none']); exit; }
+  }
+
+  $meta = $pdo->prepare("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks WHERE week = :w");
+  $meta->execute([':w' => $week]);
+  $w = $meta->fetch();
+
+  if (!$w) { echo json_encode(['week'=>$week,'rows'=>[],'finalized'=>0,'source'=>'none']); exit; }
+
+  if ((int)$w['finalized'] === 1) {
+    $snap = $pdo->prepare("SELECT json FROM snapshots WHERE week = :w");
+    $snap->execute([':w' => $week]);
+    $json = $snap->fetchColumn();
+    $rows = $json ? json_decode($json, true) : [];
+    echo json_encode(['week'=>$w['week'],'label'=>$w['label'],'finalized'=>1,'source'=>'snapshot','rows'=>is_array($rows)?$rows:[]], JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
+  // Select rows and include per-day reported_at timestamps so frontend can reason about first-reports and thresholds.
+  $q = $pdo->prepare("
+    SELECT
+      name,
+      monday,
+      tuesday,
+      wednesday,
+      thursday,
+      friday,
+      saturday,
+      sex,
+      age,
+      tag,
+      mon_reported_at,
+      tue_reported_at,
+      wed_reported_at,
+      thu_reported_at,
+      fri_reported_at,
+      sat_reported_at
+    FROM entries
+    WHERE week = :w
+    ORDER BY LOWER(name)
+  ");
+  $q->execute([':w' => $week]);
+  $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+
+  // Map server weekday (0=Sun..6=Sat) to DAY_ORDER index (0=Mon..5=Sat), use -1 for Sunday
+  $wday = (int)date('w'); // 0=Sun..6=Sat
+  $todayIdx = ($wday === 0) ? -1 : $wday - 1;
+
+  // Build per-day firstReports array (Mon..Sat => idx 0..5)
+  $dayCols = [
+    ['day'=>'monday','rep'=>'mon_reported_at'],
+    ['day'=>'tuesday','rep'=>'tue_reported_at'],
+    ['day'=>'wednesday','rep'=>'wed_reported_at'],
+    ['day'=>'thursday','rep'=>'thu_reported_at'],
+    ['day'=>'friday','rep'=>'fri_reported_at'],
+    ['day'=>'saturday','rep'=>'sat_reported_at']
+  ];
+  $firstReports = [];
+  foreach ($dayCols as $idx => $d) {
+    $dayCol = $d['day'];
+    $repCol = $d['rep'];
+    $sql = "SELECT name, $dayCol AS value, $repCol AS reported_at FROM entries WHERE week = :w AND $repCol IS NOT NULL ORDER BY $repCol ASC LIMIT 1";
+    $st = $pdo->prepare($sql);
+    $st->execute([':w' => $week]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if ($r) {
+      $firstReports[$idx] = ['dayIdx' => $idx, 'name' => $r['name'], 'value' => (int)$r['value'], 'reported_at' => (int)$r['reported_at']];
+    } else {
+      $firstReports[$idx] = null;
+    }
+  }
+
+  // Compute lifetimeStart: total steps strictly before this week for each person
+  $stLifetime = $pdo->prepare("
+    SELECT name,
+      COALESCE(SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0)),0) AS total_before
+    FROM entries
+    WHERE week < :w
+    GROUP BY name
+  ");
+  $stLifetime->execute([':w' => $week]);
+  $lifetimeStart = [];
+  foreach ($stLifetime->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $lifetimeStart[$r['name']] = (int)$r['total_before'];
+  }
+
+  echo json_encode([
+    'week'=>$w['week'],
+    'label'=>$w['label'],
+    'finalized'=>0,
+    'source'=>'live',
+    'todayIdx'=>$todayIdx,
+    'rows'=>$rows,
+    'firstReports'=>$firstReports,
+    'lifetimeStart'=>$lifetimeStart
+  ], JSON_UNESCAPED_SLASHES);
+
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error' => $e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/sms_status.php =====
+
+<?php
+// File: api/sms_status.php
+// Twilio Messaging "Delivery Status Callback" webhook.
+// Expects form-POST. Verifies X-Twilio-Signature if TWILIO_AUTH_TOKEN is set.
+// Logs to SQLite: data/walkweek.sqlite (table message_status).
+
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
+$dbFile = __DIR__ . '/../data/walkweek.sqlite';
+$authToken = getenv('TWILIO_AUTH_TOKEN') ?: '';
+
+function done(int $code=200, string $body=''): void {
+  http_response_code($code);
+  if ($body !== '') header('Content-Type: text/plain; charset=utf-8');
+  echo $body;
+  exit;
+}
+
+require_once __DIR__ . '/common_sig.php';
+
+function verify_sig(string $authToken): bool {
+  if ($authToken === '') return true;
+  $hdr = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
+  // Allow in test mode or trusted local addrs when no header present
+  if (twilio_should_skip() && $hdr === '') return true;
+
+  $info = twilio_verify($_POST, $hdr, $authToken);
+  if (getenv('TWILIO_SIG_DEBUG') === '1') {
+    error_log('SIG url=' . $info['url'] . ' match=' . (int)$info['match'] . ' hdr=' . $info['header'] . ' exp=' . $info['expected'] . ' post=' . json_encode($_POST, JSON_UNESCAPED_SLASHES));
+  }
+  return $info['match'];
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') done(405, 'Method Not Allowed');
+if (!verify_sig($authToken)) done(403, 'Invalid signature');
+
+$now = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('c');
+
+$rec = [
+  ':message_sid' => $_POST['MessageSid'] ?? $_POST['SmsSid'] ?? null,
+  ':message_status' => $_POST['MessageStatus'] ?? $_POST['SmsStatus'] ?? null, // queued|sent|delivered|undelivered|failed
+  ':to_number' => $_POST['To'] ?? null,
+  ':from_number' => $_POST['From'] ?? null,
+  ':error_code' => $_POST['ErrorCode'] ?? null,
+  ':error_message' => $_POST['ErrorMessage'] ?? null,
+  ':messaging_service_sid' => $_POST['MessagingServiceSid'] ?? null,
+  ':account_sid' => $_POST['AccountSid'] ?? null,
+  ':api_version' => $_POST['ApiVersion'] ?? null,
+  ':raw_payload' => json_encode($_POST, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
+  ':received_at_utc' => $now,
+];
+
+try {
+  $pdo = new PDO('sqlite:' . $dbFile, null, null, [
+    PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,
+  ]);
+  $pdo->exec('PRAGMA foreign_keys=ON');
+
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS message_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_sid TEXT UNIQUE,
+      message_status TEXT,
+      to_number TEXT,
+      from_number TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      messaging_service_sid TEXT,
+      account_sid TEXT,
+      api_version TEXT,
+      raw_payload TEXT,
+      received_at_utc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_status_sid ON message_status(message_sid);
+    CREATE INDEX IF NOT EXISTS idx_message_status_status ON message_status(message_status);
+  ");
+
+  $stmt = $pdo->prepare("
+    INSERT INTO message_status (
+      message_sid, message_status, to_number, from_number, error_code, error_message,
+      messaging_service_sid, account_sid, api_version, raw_payload, received_at_utc
+    ) VALUES (
+      :message_sid, :message_status, :to_number, :from_number, :error_code, :error_message,
+      :messaging_service_sid, :account_sid, :api_version, :raw_payload, :received_at_utc
+    )
+    ON CONFLICT(message_sid) DO UPDATE SET
+      message_status=excluded.message_status,
+      to_number=excluded.to_number,
+      from_number=excluded.from_number,
+      error_code=excluded.error_code,
+      error_message=excluded.error_message,
+      messaging_service_sid=excluded.messaging_service_sid,
+      account_sid=excluded.account_sid,
+      api_version=excluded.api_version,
+      raw_payload=excluded.raw_payload,
+      received_at_utc=excluded.received_at_utc
+  ");
+  $stmt->execute($rec);
+} catch (Throwable $e) {
+  error_log('sms_status error: '.$e->getMessage());
+  // still acknowledge to stop Twilio retries
+}
+
+done(200);
+
+
+# ===== FILE: ./api/admin_delete_photo.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/lib/admin_auth.php';
+require_once __DIR__ . '/db.php';
+
+function api_error(int $code, string $msg) {
+  if (isset($_POST['redirect'])) {
+    header('Location: ../admin/photos.php?err=' . urlencode($msg));
+    exit;
+  }
+  http_response_code($code);
+  exit($msg);
+}
+
+require_admin();
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { api_error(400, 'bad_method'); }
+$id = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+if ($id <= 0) { api_error(400, 'bad_input'); }
+
+$st = $pdo->prepare('SELECT photo_path FROM users WHERE id = ?');
+$st->execute([$id]);
+$path = $st->fetchColumn();
+
+if ($path) {
+  $full = dirname(__DIR__) . '/site/' . ltrim($path, '/');
+  if (file_exists($full)) @unlink($full);
+  // try to remove directory if empty
+  $dir = dirname($full);
+  @rmdir($dir);
+}
+
+$pdo->prepare('UPDATE users SET photo_path = NULL, photo_consent = 0 WHERE id = ?')->execute([$id]);
+
+if (isset($_POST['redirect'])) {
+  header('Location: ../admin/photos.php?ok=1');
+  exit;
+}
+
+echo 'ok';
+
+
+# ===== FILE: ./api/util.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+
+if (!function_exists('pdo')) {
+function pdo(): PDO {
+  $dbPath = __DIR__ . '/../data/walkweek.sqlite';
+  $dir = dirname($dbPath);
+  if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+
+  // Use a single shared PDO instance per-process where possible to avoid
+  // repeatedly opening the SQLite file.
+  static $instance = null;
+  if ($instance instanceof PDO) {
+    return $instance;
+  }
+
+  $instance = new PDO('sqlite:' . $dbPath);
+  $instance->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $instance->setAttribute(PDO::ATTR_TIMEOUT, 5);            // seconds
+  // Enable foreign key constraints for SQLite.
+  $instance->exec('PRAGMA foreign_keys=ON');
+  $instance->exec('PRAGMA journal_mode=WAL;');               // readers+writer
+  $instance->exec('PRAGMA busy_timeout=60000;');             // ms
+  $instance->exec('PRAGMA synchronous=NORMAL;');             // faster WAL commits
+  $instance->exec('PRAGMA wal_autocheckpoint=1000;');        // limit WAL size
+  return $instance;
+}
+}
+
+function with_file_lock(string $lockPath, callable $fn) {
+  // Ensure lock directory exists
+  $dir = dirname($lockPath);
+  if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+
+  $fp = @fopen($lockPath, 'c');
+  if ($fp === false) {
+    // If we can't open a lock file, fall back to running without locking.
+    return $fn();
+  }
+  try {
+    // Exclusive blocking lock
+    if (!flock($fp, LOCK_EX)) {
+      fclose($fp);
+      return $fn();
+    }
+    $result = $fn();
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return $result;
+  } finally {
+    if (isset($fp) && is_resource($fp)) {
+      @fclose($fp);
+    }
+  }
+}
+
+function read_raw_post(): string {
+  $s = file_get_contents('php://input');
+  return $s === false ? '' : $s;
+}
+
+
+# ===== FILE: ./api/weeks.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+header('Content-Type: application/json; charset=utf-8');
+// TEMP DEBUG (remove after fix)
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+
+try {
+  require_once __DIR__ . '/db.php';
+
+  $rows = $pdo->query("SELECT week, COALESCE(label, week) AS label, finalized FROM weeks ORDER BY week DESC")->fetchAll();
+  echo json_encode(['weeks' => $rows], JSON_UNESCAPED_SLASHES);
+
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error' => $e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/sign.py =====
+
+# /Users/michaelking/Documents/projects/king-walk-week/api/sign.py
+import base64, hashlib, hmac
+auth = "71883e6161a91b33bc6163a5670db921"
+url  = "https://mikebking.com/dev/html/walk/api/sms_status.php"
+post = {
+  "From": "+18015550123",
+  "MessageSid": "SM_test123",
+  "MessageStatus": "delivered",
+  "To": "+13855032310",
+}
+to_sign = url + "".join(k + post[k] for k in sorted(post.keys()))
+sig = base64.b64encode(hmac.new(auth.encode(), to_sign.encode(), hashlib.sha1).digest()).decode()
+print(sig)
+
+# ===== FILE: ./api/admin_upload_photo.php =====
+
+<?php
+declare(strict_types=1);
+
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/lib/admin_auth.php';
+require_once __DIR__ . '/db.php';
+
+function api_error(int $code, string $msg) {
+  if (isset($_POST['redirect'])) {
+    header('Location: ../admin/photos.php?err=' . urlencode($msg));
+    exit;
+  }
+  http_response_code($code);
+  exit($msg);
+}
+
+require_admin();
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { api_error(400, 'bad_method'); }
+
+$id = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+if ($id <= 0 || !isset($_FILES['photo'])) { api_error(400, 'bad_input'); }
+
+$f = $_FILES['photo'];
+if ($f['error'] !== UPLOAD_ERR_OK) { api_error(400, 'upload_error'); }
+if ($f['size'] > 4 * 1024 * 1024) { api_error(413, 'too_big'); }
+if (!is_uploaded_file($f['tmp_name'])) { api_error(400, 'bad_input'); }
+
+$mime = mime_content_type($f['tmp_name']);
+if (!in_array($mime, ['image/jpeg','image/png','image/webp'], true)) { api_error(400, 'bad_type'); }
+$ext = ($mime === 'image/png') ? 'png' : (($mime === 'image/webp') ? 'webp' : 'jpg');
+
+$siteBase = dirname(__DIR__) . '/site';
+$assetsBase = $siteBase . '/assets';
+$dir = $assetsBase . '/users/' . $id;
+if (!is_dir($dir) && !mkdir($dir, 0755, true)) { api_error(500, 'mkdir_fail'); }
+
+// remove any existing selfie.* to avoid stale extension mismatch
+foreach (glob($dir . '/selfie.*') as $old) { if (is_file($old)) @unlink($old); }
+
+$dest = $dir . '/selfie.' . $ext;
+
+$img = @imagecreatefromstring(file_get_contents($f['tmp_name']));
+if (!$img) { api_error(400, 'decode_fail'); }
+
+// normalize to max 1024px on longest side
+$w = imagesx($img); $h = imagesy($img);
+$scale = min(1024 / max($w, $h), 1.0);
+$nw = (int)floor($w * $scale); $nh = (int)floor($h * $scale);
+$can = imagecreatetruecolor($nw, $nh);
+
+// preserve transparency for PNG/WebP
+if (in_array($ext, ['png','webp'], true)) {
+  imagealphablending($can, false);
+  imagesavealpha($can, true);
+  $transparent = imagecolorallocatealpha($can, 0, 0, 0, 127);
+  imagefilledrectangle($can, 0, 0, $nw, $nh, $transparent);
+}
+
+imagecopyresampled($can, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+
+$ok = false;
+if ($ext === 'png') {
+  $ok = imagepng($can, $dest);
+} elseif ($ext === 'webp') {
+  // quality 85
+  $ok = function_exists('imagewebp') ? imagewebp($can, $dest, 85) : false;
+} else {
+  $ok = imagejpeg($can, $dest, 85);
+}
+
+imagedestroy($img);
+imagedestroy($can);
+
+if (!$ok) { api_error(500, 'save_fail'); }
+
+// store relative path under site/assets
+$rel = 'assets/users/' . $id . '/selfie.' . $ext;
+$st = $pdo->prepare('UPDATE users SET photo_path = ?, photo_consent = 1 WHERE id = ?');
+$st->execute([$rel, $id]);
+
+if (isset($_POST['redirect'])) {
+  header('Location: ../admin/photos.php?ok=1');
+  exit;
+}
+
+http_response_code(200);
+echo 'ok';
+
+
+# ===== FILE: ./api/ai_send_approved.php =====
+
+<?php
+// DEPRECATED: This endpoint will be removed; use router /api/... instead
+header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
+require_once __DIR__ . '/lib/admin_auth.php';
+require_once __DIR__ . '/lib/tx.php';
+require_once __DIR__ . '/db.php';
+require_admin();
+header('Content-Type: application/json');
+
+$week = $_POST['week'] ?? null;
+if (!$week) { http_response_code(400); echo json_encode(['error'=>'missing week']); exit; }
+
+function send_outbound_sms($to, $body) {
+  // TODO: integrate Twilio REST here. For now, pretend success.
+  return ['sid' => 'test_' . uniqid()];
+}
+
+try {
+  $pdo = pdo();
+  // Fetch all approved and unsent for week in a stable order
+  $msgs = $pdo->prepare('
+    SELECT m.id, m.user_id, m.content, u.phone_e164 AS phone
+    FROM ai_messages m
+    LEFT JOIN users u ON u.id = m.user_id
+    WHERE m.week = ? AND m.approved_by IS NOT NULL AND m.sent_at IS NULL
+    ORDER BY m.created_at ASC, m.id ASC
+  ');
+  $msgs->execute([$week]);
+  $rows = $msgs->fetchAll();
+
+  $sent = [];
+  foreach ($rows as $r) {
+    if (!$r['phone']) continue;
+    // send one by one, mark sent within a retrying txn
+    $resp = send_outbound_sms($r['phone'], $r['content']);
+    with_txn_retry(function($pdo) use ($r, $resp) {
+      $stmt = $pdo->prepare('UPDATE ai_messages SET sent_at = datetime("now") WHERE id = ? AND sent_at IS NULL');
+      $stmt->execute([$r['id']]);
+    });
+    $sent[] = ['id'=>$r['id'], 'phone'=>$r['phone'], 'sid'=>$resp['sid'] ?? null];
+    usleep(200 * 1000); // 200ms pacing
+  }
+
+  echo json_encode(['ok'=>true, 'count'=>count($sent), 'sent'=>$sent]);
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['error'=>'send_failed','message'=>$e->getMessage()]);
+}
+
+
+# ===== FILE: ./api/lib/dates.php =====
+
+<?php
+require_once __DIR__.'/env.php';
+
+function now_in_tz(){
+  $tz=new DateTimeZone(env('WALK_TZ','America/Denver'));
+  return new DateTime('now',$tz);
+}
+
+function map_day_to_col($s){
+  $m=strtolower(substr($s,0,3));
+  return ['mon'=>'monday','tue'=>'tuesday','wed'=>'wednesday','thu'=>'thursday','fri'=>'friday','sat'=>'saturday'][$m]??null;
+}
+
+function resolve_target_day(DateTime $now,$overrideDay){
+  if($overrideDay){$c=map_day_to_col($overrideDay);return $c?:null;}
+  $hour=intval($now->format('H'));
+  $t=clone $now;
+  if($hour<12)$t->modify('-1 day');
+  $w=intval($t->format('w')); // 0 Sun..6 Sat
+  if($w===0)return 'saturday';
+  return ['monday','tuesday','wednesday','thursday','friday','saturday'][$w-1]??null;
+}
+
+function resolve_active_week(PDO $pdo){
+  $r=$pdo->query("SELECT week FROM weeks WHERE finalized=0 ORDER BY week DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+  return $r['week']??null;
+}
+
+
+# ===== FILE: ./api/lib/entries.php =====
+
+<?php
+function is_valid_daycol($c){return in_array($c,['monday','tuesday','wednesday','thursday','friday','saturday'],true);}
+
+/**
+ * upsert_steps
+ * Insert or update a single day's steps for a person in a week.
+ *
+ * Behavior:
+ * - dayCol must be a valid weekday column.
+ * - $steps may be null or a non-negative integer.
+ * - We intentionally write the day's numeric value and rely on DB triggers
+ *   to set the corresponding *_reported_at timestamp only the first time
+ *   a positive value is observed (see api/migrate.php triggers).
+ */
+function upsert_steps(PDO $pdo,$week,$name,$dayCol,$steps){
+  if(!is_valid_daycol($dayCol)) throw new RuntimeException('bad day');
+
+  // Normalize steps: allow null or integer >= 0
+  if ($steps === null) {
+    $val = null;
+  } else {
+    $val = (int)$steps;
+    if ($val < 0) throw new RuntimeException('invalid steps');
+  }
+
+  $sql = "INSERT INTO entries(week,name,$dayCol) VALUES(:w,:n,:s)
+          ON CONFLICT(week,name) DO UPDATE SET $dayCol=excluded.$dayCol, updated_at=(datetime('now'))";
+  $st = $pdo->prepare($sql);
+  $st->bindValue(':w', $week);
+  $st->bindValue(':n', $name);
+  if ($val === null) {
+    $st->bindValue(':s', null, PDO::PARAM_NULL);
+  } else {
+    $st->bindValue(':s', $val, PDO::PARAM_INT);
+  }
+  $st->execute();
+}
+
+
+# ===== FILE: ./api/lib/env.php =====
+
+<?php
+function env($k,$def=null){$v=getenv($k);return($v===false||$v==='')?$def:$v;}
+
+
+# ===== FILE: ./api/lib/admin_auth.php =====
+
+<?php
+declare(strict_types=1);
+
+function require_admin(): void {
+  // Read creds from env or .env file if available
+  $user = getenv('ADMIN_USER') ?: '';
+  $pass = getenv('ADMIN_PASS') ?: '';
+
+  // If no creds configured, allow all (dev-friendly)
+  if ($user === '' && $pass === '') return;
+
+  $gotUser = $_SERVER['PHP_AUTH_USER'] ?? '';
+  $gotPass = $_SERVER['PHP_AUTH_PW']   ?? '';
+
+  // If Apache/Nginx didn’t pass auth, try HTTP_AUTHORIZATION fallback
+  if ($gotUser === '' && isset($_SERVER['HTTP_AUTHORIZATION'])) {
+    if (stripos($_SERVER['HTTP_AUTHORIZATION'], 'Basic ') === 0) {
+      $decoded = base64_decode(substr($_SERVER['HTTP_AUTHORIZATION'], 6));
+      if ($decoded !== false && strpos($decoded, ':') !== false) {
+        [$gotUser, $gotPass] = explode(':', $decoded, 2);
+        // populate PHP_AUTH_* so application code can read them
+        $_SERVER['PHP_AUTH_USER'] = $gotUser;
+        $_SERVER['PHP_AUTH_PW']   = $gotPass;
+      }
+    }
+  }
+
+  if (!hash_equals((string)$user, (string)$gotUser) || !hash_equals((string)$pass, (string)$gotPass)) {
+    header('WWW-Authenticate: Basic realm="KW Admin"');
+    http_response_code(401);
+    echo 'Unauthorized';
+    exit;
+  }
+}
+
+if (!function_exists('require_admin_username')) {
+  function require_admin_username(): string {
+    require_admin();
+    return $_SERVER['PHP_AUTH_USER'] ?? 'admin';
+  }
+}
+
+
+# ===== FILE: ./api/lib/phone.php =====
+
+<?php
+function to_e164($raw){
+  $d=preg_replace('/\D+/','',$raw??'');
+  if($d==='')return null;
+  if(strlen($d)===11 && $d[0]==='1')$d=substr($d,1);
+  if(strlen($d)===10)return '+1'.$d;
+  if($raw && $raw[0]==='+')return '+'.$d;
+  return null;
+}
+
+
+# ===== FILE: ./api/lib/tx.php =====
+
+<?php
+require_once __DIR__ . '/../db.php';
+
+/**
+ * Executes $fn($pdo) in a retrying IMMEDIATE transaction.
+ *
+ * Usage:
+ *   with_txn_retry(function($pdo) {
+ *     // do quick DB writes here
+ *   });
+ */
+function with_txn_retry(callable $fn, int $retries = 5, int $sleepMs = 200) {
+  $pdo = pdo();
+  for ($i = 0; $i <= $retries; $i++) {
+    try {
+      $pdo->exec('BEGIN IMMEDIATE;');
+      $res = $fn($pdo);
+      $pdo->exec('COMMIT;');
+      return $res;
+    } catch (Throwable $e) {
+      try { $pdo->exec('ROLLBACK;'); } catch (Throwable $_) {}
+      if ($i === $retries) throw $e;
+      usleep($sleepMs * 1000);
+    }
+  }
+}
+
+
+# ===== FILE: ./api/lib/status_callback.php =====
+
+<?php
+// File: api/status_callback.php
+// Receives Twilio status callbacks for outbound/inbound messages.
+// Expects application/x-www-form-urlencoded POST.
+// Verifies X-Twilio-Signature if TWILIO_AUTH_TOKEN is set.
+// Logs events into SQLite: data/walkweek.sqlite (table DDL below).
+
+declare(strict_types=1);
+
+// ----- config -----
+$dbFile = __DIR__ . '/../data/walkweek.sqlite';
+$authToken = getenv('TWILIO_AUTH_TOKEN') ?: ''; // set in web server env
+
+// ----- helpers -----
+function http_response(int $code, string $body = ''): void {
+    http_response_code($code);
+    if ($body !== '') header('Content-Type: text/plain; charset=utf-8');
+    echo $body;
+    exit;
+}
+
+require_once __DIR__ . '/../common_sig.php';
+
+function verify_twilio_signature(string $authToken): bool {
+    // If no token configured, skip verification (not recommended for prod).
+    if ($authToken === '') return true;
+
+    $signature = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
+
+    // Allow in test mode or trusted local addrs when no header present
+    if (twilio_should_skip() && $signature === '') return true;
+
+    $info = twilio_verify($_POST, $signature, $authToken);
+    if (getenv('TWILIO_SIG_DEBUG') === '1') {
+        error_log('SIG url=' . $info['url'] . ' match=' . (int)$info['match'] . ' hdr=' . $info['header'] . ' exp=' . $info['expected'] . ' post=' . json_encode($_POST, JSON_UNESCAPED_SLASHES));
+    }
+
+    // Constant-time compare result included in $info['match']
+    return $info['match'];
+}
+
+// ----- verify method -----
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response(405, 'Method Not Allowed');
+}
+
+// ----- verify signature -----
+if (!verify_twilio_signature($authToken)) {
+    http_response(403, 'Invalid signature');
+}
+
+// ----- collect fields (Twilio names) -----
+$nowUtc = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('c');
+
+$record = [
+    'message_sid'     => $_POST['MessageSid']     ?? $_POST['SmsSid'] ?? null,
+    'message_status'  => $_POST['MessageStatus']  ?? $_POST['SmsStatus'] ?? null,
+    'to_number'       => $_POST['To']             ?? null,
+    'from_number'     => $_POST['From']           ?? null,
+    'error_code'      => $_POST['ErrorCode']      ?? null,
+    'error_message'   => $_POST['ErrorMessage']   ?? null,
+    'messaging_service_sid' => $_POST['MessagingServiceSid'] ?? null,
+    'account_sid'     => $_POST['AccountSid']     ?? null,
+    'api_version'     => $_POST['ApiVersion']     ?? null,
+    'raw_payload'     => json_encode($_POST, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+    'received_at_utc' => $nowUtc,
+];
+
+// ----- store to SQLite -----
+try {
+    $pdo = new PDO('sqlite:' . $dbFile, null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+    $pdo->exec('PRAGMA foreign_keys = ON');
+
+    // Create table if missing
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS message_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_sid TEXT UNIQUE,
+            message_status TEXT,
+            to_number TEXT,
+            from_number TEXT,
+            error_code TEXT,
+            error_message TEXT,
+            messaging_service_sid TEXT,
+            account_sid TEXT,
+            api_version TEXT,
+            raw_payload TEXT,
+            received_at_utc TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_message_status_sid ON message_status(message_sid);
+        CREATE INDEX IF NOT EXISTS idx_message_status_status ON message_status(message_status);
+    ");
+
+    // Upsert by message_sid
+    $stmt = $pdo->prepare("
+        INSERT INTO message_status (
+            message_sid, message_status, to_number, from_number, error_code, error_message,
+            messaging_service_sid, account_sid, api_version, raw_payload, received_at_utc
+        ) VALUES (
+            :message_sid, :message_status, :to_number, :from_number, :error_code, :error_message,
+            :messaging_service_sid, :account_sid, :api_version, :raw_payload, :received_at_utc
+        )
+        ON CONFLICT(message_sid) DO UPDATE SET
+            message_status=excluded.message_status,
+            to_number=excluded.to_number,
+            from_number=excluded.from_number,
+            error_code=excluded.error_code,
+            error_message=excluded.error_message,
+            messaging_service_sid=excluded.messaging_service_sid,
+            account_sid=excluded.account_sid,
+            api_version=excluded.api_version,
+            raw_payload=excluded.raw_payload,
+            received_at_utc=excluded.received_at_utc
+    ");
+    $stmt->execute($record);
+} catch (Throwable $e) {
+    // Fail closed but acknowledge to Twilio to avoid retries storms
+    error_log('status_callback error: ' . $e->getMessage());
+    http_response(200); // acknowledge anyway
+}
+
+// Twilio expects 200 with no body
+http_response(200);
+
+
+# ===== FILE: ./api/lib/ai.php =====
+
+<?php
+declare(strict_types=1);
+
+/**
+ * ai_enabled
+ * Return true if app_settings.ai_enabled is set to '1'.
+ */
+function ai_enabled(PDO $pdo): bool {
+  $st = $pdo->prepare("SELECT value FROM app_settings WHERE key = 'ai_enabled' LIMIT 1");
+  $st->execute();
+  $v = $st->fetchColumn();
+  return ($v === '1');
+}
+
+function ai_enqueue(PDO $pdo, string $type, ?int $user_id, ?string $week, string $model='rules-v0', ?string $scope_key=NULL) {
+  $stmt = $pdo->prepare("INSERT INTO ai_messages(type, scope_key, user_id, week, content, model) VALUES(?,?,?,?,?,?)");
+  $stmt->execute([$type, $scope_key, $user_id, $week, '', $model]);
+}
+
+
+# ===== FILE: ./api/lib/twilio.php =====
+
+<?php
+function verify_twilio_signature($authToken,$url,$post,$headerSig){
+  if(!$authToken) return true;
+  $data = $url;
+  ksort($post);
+  foreach($post as $k => $v){ $data .= $k . $v; }
+  $sig = base64_encode(hash_hmac('sha1', $data, $authToken, true));
+  return hash_equals($sig, $headerSig ?? '');
+}
+
+
+# ===== FILE: ./templates/admin/ai.php =====
+
+<?php
+$csrf = \App\Security\Csrf::token();
+?>
+<!doctype html><meta charset="utf-8"><title>AI Admin</title>
+<div>
+  <button id="refresh">Refresh</button>
+  <input id="week" placeholder="YYYY-W##">
+  <button id="send">Send approved for week</button>
+  <ul id="items"></ul>
+</div>
+<script>
+const csrf = <?= json_encode($csrf) ?>;
+async function load() {
+  const r = await fetch('/api/ai/list');
+  const j = await r.json();
+  const ul = document.getElementById('items');
+  ul.innerHTML = '';
+  j.items.forEach(it => {
+    const li = document.createElement('li');
+    li.textContent = `#${it.id} ${it.body}`;
+    const b = document.createElement('button');
+    b.textContent = 'Approve';
+    b.onclick = async () => {
+      const fd = new FormData();
+      fd.append('id', it.id);
+      fd.append('csrf', csrf);
+      const r = await fetch('/api/ai/approve', { method:'POST', body: fd });
+      if (r.ok) load();
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+document.getElementById('refresh').onclick = load;
+document.getElementById('send').onclick = async () => {
+  const fd = new FormData();
+  fd.append('week', document.getElementById('week').value.trim());
+  fd.append('csrf', csrf);
+  const r = await fetch('/api/ai/send-approved', { method:'POST', body: fd });
+  alert(await r.text());
+};
+load();
+</script>
+
+
+# ===== FILE: ./data/weeks/manifest.json =====
+
+{
+  "weeks": [
+    {
+      "label": "Current Week",
+      "file": "/kings_walk_week.csv"
+    },
+    {
+      "label": "Aug 12–17",
+      "file": "2025-08-17.csv"
+    }
+  ]
+}
+
+# ===== FILE: ./routes/web.php =====
+
+<?php
+use App\Core\Router;
+use App\Controllers\AdminController;
+
+/** @var Router $router */
+$router->add('GET', '/', fn() => 'OK');
+$router->add('GET', '/admin/ai', [new AdminController(), 'ai']); // will implement later
+
+$api = new \App\Controllers\Api\AiController();
+$router->add('GET','/api/ai/list', [$api,'list']);
+$router->add('POST','/api/ai/approve', [$api,'approve']);
+$router->add('POST','/api/ai/send-approved', [$api,'sendApproved']);

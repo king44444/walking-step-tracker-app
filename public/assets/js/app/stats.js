@@ -80,6 +80,7 @@ export function computeStats(data, lifetimeMap = new Map(), serverTodayIdx = und
 
     return {
       name: row.Name,
+      id: row.Id,
       tag: row.Tag,
       days, total, avg, best,
       thirtyK, cherylCount, fifteenK, tenK, two5K, oneK,

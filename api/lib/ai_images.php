@@ -86,7 +86,15 @@ function ai_image_generate(array $opts): array {
   }
 
   $label = award_label($kind, $milestone);
-  $prompt = build_award_prompt($userName, $label, $milestone, $style);
+  
+  // Detect lifetime awards and use enhanced prompt
+  $isLifetime = (stripos($kind, 'lifetime') !== false) || ($milestone >= 100000);
+  if ($isLifetime && isset($opts['user'])) {
+    $prompt = build_lifetime_award_prompt($opts['user'], $label, $milestone);
+  } else {
+    $prompt = build_award_prompt($userName, $label, $milestone, $style);
+  }
+  
   $provider = strtolower((string)setting_get('ai.image.provider', 'local'));
   $model = (string)setting_get('ai.image.model', '');
 
@@ -266,6 +274,52 @@ function build_award_prompt(string $userName, string $awardLabel, int $milestone
 }
 
 /**
+ * Build enhanced prompt for lifetime step awards based on user interests.
+ * Randomly selects ONE interest from comma-separated list.
+ */
+function build_lifetime_award_prompt(array $user, string $awardLabel, int $milestone): string {
+  $userName = (string)($user['name'] ?? 'Walker');
+  $interests = trim((string)($user['interests'] ?? ''));
+  
+  // Parse interests and randomly select one
+  if ($interests !== '') {
+    $interestList = array_map('trim', explode(',', $interests));
+    $interestList = array_filter($interestList); // Remove empty entries
+    if (count($interestList) > 0) {
+      $interestText = $interestList[array_rand($interestList)];
+    } else {
+      $interestText = 'modern geometric design with symbols of perseverance';
+    }
+  } else {
+    $interestText = 'modern geometric design with symbols of perseverance';
+  }
+  
+  // Milestone-specific style hints
+  $styleHint = match(true) {
+    $milestone >= 500000 => 'cosmic energy, nebula background, mythic feel',
+    $milestone >= 200000 => 'platinum glow, aurora sky, elegant symmetry',
+    default => 'gold medal motif, radiant gradients, joyful sparks'
+  };
+  
+  return sprintf(
+    "Design a breathtaking digital award image celebrating a lifetime walking achievement. 
+     %s has reached %s lifetime steps (%s). 
+     Create a highly detailed, imaginative emblem that visually represents their personality and interest: %s. 
+     Use luminous color, depth, and storytelling elements. 
+     Capture the feeling of epic accomplishment, motion, and personal triumph. 
+     Composition: centered emblem, cinematic lighting, subtle text 'Lifetime %s Steps'. 
+     No faces or photo realism. Square 1024x1024 ratio. 
+     Style: digital painting + vector hybrid, vivid and collectible. Style hint: %s.",
+    $userName,
+    number_format($milestone),
+    $awardLabel,
+    $interestText,
+    number_format($milestone),
+    $styleHint
+  );
+}
+
+/**
  * Reuse recent image within window for same user/kind/milestone.
  * Returns array with ['abs'=>..., 'rel'=>..., 'url'=>...] or null.
  */
@@ -295,18 +349,45 @@ function ai_image_svg_badge(string $userName, string $label, int $milestone, str
   $user = htmlspecialchars($userName, ENT_QUOTES, 'UTF-8');
   $miles = number_format($milestone);
   $sub = $user !== '' ? $user : 'Walk Week';
-  // Simple, clean SVG with dark blue bg and white text
+  
+  // Milestone-specific color schemes for lifetime awards
+  if ($milestone >= 500000) {
+    // Cosmic: deep purple to blue
+    $gradStart = '#1a0a3e';
+    $gradEnd = '#2a1a5e';
+    $circleColor = '#4a2a9e';
+    $circleStroke = '#6a4abe';
+  } elseif ($milestone >= 200000) {
+    // Platinum: silver-blue to teal
+    $gradStart = '#0a1a2a';
+    $gradEnd = '#1a2a4a';
+    $circleColor = '#2a4a7a';
+    $circleStroke = '#4a6a9a';
+  } elseif ($milestone >= 100000) {
+    // Gold: warm gold to blue
+    $gradStart = '#1a1408';
+    $gradEnd = '#2a2418';
+    $circleColor = '#4a4428';
+    $circleStroke = '#6a6448';
+  } else {
+    // Default: dark blue
+    $gradStart = '#0b1020';
+    $gradEnd = '#111936';
+    $circleColor = '#1b2a7a';
+    $circleStroke = '#2c3a7a';
+  }
+  
   return <<<SVG
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0b1020"/>
-      <stop offset="100%" stop-color="#111936"/>
+      <stop offset="0%" stop-color="{$gradStart}"/>
+      <stop offset="100%" stop-color="{$gradEnd}"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" fill="url(#g)"/>
-  <circle cx="256" cy="180" r="100" fill="#1b2a7a" stroke="#2c3a7a" stroke-width="6"/>
+  <circle cx="256" cy="180" r="100" fill="{$circleColor}" stroke="{$circleStroke}" stroke-width="6"/>
   <text x="256" y="180" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="28" text-anchor="middle" fill="#e6ecff">{$title}</text>
   <text x="256" y="220" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="16" text-anchor="middle" fill="#9aa9e6">{$miles}</text>
   <rect x="96" y="300" width="320" height="60" rx="12" fill="#17214f" stroke="#2c3a7a" stroke-width="4"/>

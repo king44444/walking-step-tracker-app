@@ -10,6 +10,7 @@ export function ingestRows(rows) {
       Tag: (r.tag || "").toString().trim(),
       Sex: (r.sex || "").toString().trim(),
       Age: r.age != null ? Number(r.age) : null,
+      Id: r.user_id != null ? Number(r.user_id) : null,
     };
     DAY_ORDER.forEach(d => out[d] = toNum(r[d.toLowerCase()]));
     out["Total Steps"] = DAY_ORDER.reduce((a,d)=> a + (Number.isFinite(out[d]) ? out[d] : 0), 0);

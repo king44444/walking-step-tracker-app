@@ -82,7 +82,7 @@ export function renderLeaderboard(people) {
     return `
     <tr class="border-t border-white/5">
       <td class="py-2 pr-2">${idx+1}</td>
-      <td class="py-2 pr-2">${safe(p.name)}</td>
+      <td class="py-2 pr-2">${p.id ? `<a href=\"./user.php?id=${encodeURIComponent(p.id)}\" class=\"text-blue-300 hover:underline\">${safe(p.name)}</a>` : safe(p.name)}</td>
       <td class="py-2 text-right stat">${total}</td>
       <td class="py-2 text-right stat">${avg}</td>
       <td class="py-2 text-right stat">${best}</td>
@@ -103,7 +103,7 @@ export function renderLeaderboard(people) {
       tbody.innerHTML = arr.map((p, idx) => {
     return `<tr class="border-t border-white/5">
           <td class="py-2 pr-2">${idx+1}</td>
-          <td class="py-2 pr-2">${safe(p.name)}</td>
+          <td class="py-2 pr-2">${p.id ? `<a href=\"./user.php?id=${encodeURIComponent(p.id)}\" class=\"text-blue-300 hover:underline\">${safe(p.name)}</a>` : safe(p.name)}</td>
           <td class="py-2 text-right stat">${fmt(p.total)}</td>
           <td class="py-2 text-right stat">${fmt(p.avg)}</td>
           <td class="py-2 text-right stat">${fmt(p.best)}</td>
@@ -742,7 +742,7 @@ export function renderCards(people) {
     return `
     <article class="card p-4 space-y-2">
       <div class="flex items-center justify-between">
-        <h4 class="text-lg font-bold">${safe(p.name)} ${tag}</h4>
+        <h4 class="text-lg font-bold">${p.id ? `<a href=\"./user.php?id=${encodeURIComponent(p.id)}\" class=\"hover:underline\">${safe(p.name)}</a>` : safe(p.name)} ${tag}</h4>
         <div class="flex flex-wrap gap-1">${badges.join('')}</div>
       </div>
       <div class="grid grid-cols-3 gap-2 text-center">
