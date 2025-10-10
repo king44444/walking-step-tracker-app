@@ -32,6 +32,13 @@ try {
     'ai.nudge.enabled',
     'ai.recap.enabled',
     'ai.award.enabled',
+    // Award thresholds and labels editable via admin UI
+    'thresholds.cheryl',
+    'thresholds.thirty_k',
+    'awards.first_20k',
+    'awards.first_30k',
+    'awards.first_15k',
+    // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps',
     'milestones.attendance_weeks'
   ];
