@@ -237,6 +237,7 @@ try {
                 <td class="muted"><?= date('M j, Y', strtotime($a['created_at'])) ?></td>
                 <td>
                   <a href="../site/user.php?id=<?= (int)$a['user_id'] ?>" class="link" target="_blank">View Page</a>
+                  <button class="btn warn delete-award-btn" data-id="<?= (int)$a['id'] ?>" style="margin-left:8px">Delete</button>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -356,10 +357,39 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
   }
 });
 
-// Refresh page
-document.getElementById('refreshBtn').addEventListener('click', () => {
-  location.reload();
-});
+ // Refresh page
+ document.getElementById('refreshBtn').addEventListener('click', () => {
+   location.reload();
+ });
+
+ // Delete award
+ document.querySelectorAll('.delete-award-btn').forEach(btn => {
+   btn.addEventListener('click', async (e) => {
+     const id = btn.getAttribute('data-id');
+     if (!id) return;
+     if (!confirm('Delete this award? This will remove the DB row and the generated image file (if present).')) return;
+     showStatus('Deleting award...');
+     try {
+       const tk = await freshCsrf();
+       const res = await fetch(base + 'api/admin_delete_award.php', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
+         body: JSON.stringify({ id: parseInt(id, 10) })
+       });
+       const j = await res.json();
+       if (j && j.ok) {
+         showStatus('✓ Deleted', 'ok');
+         // remove the row
+         const row = btn.closest('tr');
+         if (row) row.remove();
+       } else {
+         showStatus('✗ Error deleting award', 'err');
+       }
+     } catch (err) {
+       showStatus('✗ Error deleting award', 'err');
+     }
+   });
+ });
 </script>
 </body>
 </html>

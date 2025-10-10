@@ -59,7 +59,12 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
         $earned = $totalSteps >= $threshold;
         
         // Get image path from ai_awards table or use fallback
-        $imageUrl = $imagePaths[$threshold] ?? 'assets/admin/no-photo.svg';
+        if (!empty($imagePaths[$threshold])) {
+            $imageUrl = $imagePaths[$threshold];
+        } else {
+            // Try to find an existing award image on disk before falling back to the generic no-photo
+            $imageUrl = find_award_image($userId, $threshold);
+        }
         $thumbUrl = $imageUrl; // Use same image for thumb (no separate thumbs directory)
         
         $award = [
