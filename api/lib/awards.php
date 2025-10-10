@@ -38,13 +38,17 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
         $key = "lifetime_{$threshold}";
         $earned = $totalSteps >= $threshold;
         
+        // Find the most recent award image for this threshold
+        $imageUrl = find_award_image($userId, $threshold);
+        $thumbUrl = $imageUrl; // Use same image for thumb (no separate thumbs directory)
+        
         $award = [
             'key' => $key,
             'threshold' => $threshold,
             'earned' => $earned,
             'awarded_at' => null,
-            'image_url' => "assets/awards/{$userId}/lifetime-{$threshold}.svg",
-            'thumb_url' => "assets/awards/thumbs/{$userId}/lifetime-{$threshold}.svg",
+            'image_url' => $imageUrl,
+            'thumb_url' => $thumbUrl,
             'title' => format_threshold($threshold)
         ];
         
@@ -159,6 +163,44 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
     }
     
     return null;
+}
+
+/**
+ * Find the most recent award image for a user and threshold.
+ * Award images are named like: lifetime-steps-100000-20251010.svg
+ * 
+ * @param int $userId User ID
+ * @param int $threshold Step threshold
+ * @return string Relative path to image or fallback
+ */
+function find_award_image(int $userId, int $threshold): string {
+    $awardsDir = __DIR__ . '/../../site/assets/awards/' . $userId;
+    $pattern = "lifetime-steps-{$threshold}-*.svg";
+    
+    // Check if directory exists
+    if (!is_dir($awardsDir)) {
+        return 'assets/admin/no-photo.svg';
+    }
+    
+    // Find all matching files
+    $files = glob($awardsDir . '/' . $pattern);
+    
+    if (empty($files)) {
+        // Try webp format
+        $pattern = "lifetime-steps-{$threshold}-*.webp";
+        $files = glob($awardsDir . '/' . $pattern);
+    }
+    
+    if (empty($files)) {
+        return 'assets/admin/no-photo.svg';
+    }
+    
+    // Sort by filename (date suffix) descending to get most recent
+    rsort($files);
+    
+    // Return relative path from site directory
+    $filename = basename($files[0]);
+    return "assets/awards/{$userId}/{$filename}";
 }
 
 /**
