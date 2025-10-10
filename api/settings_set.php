@@ -26,12 +26,20 @@ try {
 
   $key = isset($in['key']) ? (string)$in['key'] : '';
   if ($key === '') { http_response_code(400); echo json_encode(['error'=>'missing_key']); exit; }
-  $allowed = ['ai.enabled','ai.nudge.enabled','ai.recap.enabled','ai.award.enabled'];
+  // Allow milestone settings so admin UI can save comma-separated milestone lists
+  $allowed = [
+    'ai.enabled',
+    'ai.nudge.enabled',
+    'ai.recap.enabled',
+    'ai.award.enabled',
+    'milestones.lifetime_steps',
+    'milestones.attendance_weeks'
+  ];
   if (!in_array($key, $allowed, true)) { http_response_code(400); echo json_encode(['error'=>'bad_key']); exit; }
   $val = $in['value'] ?? null;
   if (is_bool($val)) { $val = $val ? '1' : '0'; }
   if (!is_string($val)) { $val = (string)$val; }
-  if ($val !== '0' && $val !== '1') { /* allow strings but normalize booleans */ }
+  // Accept arbitrary string values for milestone lists (comma-separated ints)
   setting_set($key, $val);
   echo json_encode(['ok'=>true]);
 } catch (Throwable $e) {

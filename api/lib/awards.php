@@ -2,6 +2,25 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/dates.php';
+require_once __DIR__ . '/settings.php';
+
+/**
+ * Parse comma-separated milestone string into sorted unique int array.
+ *
+ * @param string $s Comma-separated integers e.g. "100000,250000"
+ * @return int[] Sorted unique positive integers
+ */
+function parse_milestones_string(string $s): array {
+    $parts = array_filter(array_map('trim', explode(',', $s)), fn($x) => $x !== '');
+    $nums = [];
+    foreach ($parts as $p) {
+        $n = (int)$p;
+        if ($n > 0) $nums[] = $n;
+    }
+    $nums = array_values(array_unique($nums));
+    sort($nums, SORT_NUMERIC);
+    return $nums;
+}
 
 /**
  * Get lifetime awards for a user with computed earned dates.
@@ -12,7 +31,7 @@ require_once __DIR__ . '/dates.php';
  * @return array List of award objects with earned status and dates
  */
 function get_lifetime_awards(PDO $pdo, int $userId): array {
-    $thresholds = [100000, 250000, 500000, 750000, 1000000];
+    $thresholds = parse_milestones_string(setting_get('milestones.lifetime_steps', '100000,250000,500000,750000,1000000'));
     $awards = [];
     
     // Get user name from user ID

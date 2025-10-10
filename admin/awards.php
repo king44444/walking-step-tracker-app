@@ -193,6 +193,35 @@ try {
         <button class="btn" id="refreshBtn">Refresh List</button>
       </div>
     </div>
+
+    <!-- Milestones Management -->
+    <div class="card">
+      <h2>Milestones</h2>
+      <div class="muted" style="margin-bottom:8px">Manage milestone lists for awards. Enter comma-separated integers.</div>
+
+      <div class="row" style="margin-bottom:8px">
+        <label style="flex:1">
+          Lifetime steps:
+          <input id="msLifetime" type="text" placeholder="100000,250000,500000" style="width:100%" />
+        </label>
+      </div>
+
+      <div class="row" style="margin-bottom:8px">
+        <label style="flex:1">
+          Attendance weeks (checkins):
+          <input id="msAttendance" type="text" placeholder="25,50,100" style="width:100%" />
+        </label>
+      </div>
+
+      <div class="row" style="margin-bottom:8px">
+        <div id="msPreview" class="muted" style="flex:1">Parsed: —</div>
+      </div>
+
+      <div class="row">
+        <button class="btn primary" id="saveMsBtn">Save Milestones</button>
+        <button class="btn" id="resetMsBtn" style="margin-left:8px">Reset to Defaults</button>
+      </div>
+    </div>
   </div>
 
   <!-- Awards List -->
@@ -424,6 +453,108 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
      }
    });
  });
+
+//
+// Milestones management JS
+//
+
+function parseMilestones(str) {
+  if (!str || typeof str !== 'string') return [];
+  return Array.from(new Set(str.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0)))
+    .sort((a,b) => a - b);
+}
+
+function formatList(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return '—';
+  return arr.join(', ');
+}
+
+function updateMsPreview() {
+  const l = parseMilestones(document.getElementById('msLifetime').value);
+  const a = parseMilestones(document.getElementById('msAttendance').value);
+  const el = document.getElementById('msPreview');
+  el.textContent = `Lifetime: ${formatList(l)} · Attendance: ${formatList(a)}`;
+}
+
+async function loadMilestones() {
+  try {
+    const r = await fetch(base + 'api/settings_get.php', { cache: 'no-store' });
+    const j = await r.json();
+    if (j) {
+      document.getElementById('msLifetime').value = j['milestones.lifetime_steps'] || '';
+      document.getElementById('msAttendance').value = j['milestones.attendance_weeks'] || '';
+      updateMsPreview();
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function saveSetting(key, value) {
+  const tk = await freshCsrf();
+  const res = await fetch(base + 'api/settings_set.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
+    body: JSON.stringify({ key, value })
+  });
+  return res.json();
+}
+
+document.getElementById('msLifetime').addEventListener('input', updateMsPreview);
+document.getElementById('msAttendance').addEventListener('input', updateMsPreview);
+
+document.getElementById('saveMsBtn').addEventListener('click', async () => {
+  const lraw = document.getElementById('msLifetime').value;
+  const araw = document.getElementById('msAttendance').value;
+  const l = parseMilestones(lraw);
+  const a = parseMilestones(araw);
+  if (l.length === 0 || a.length === 0) {
+    alert('Both milestone lists must contain at least one positive integer.');
+    return;
+  }
+  showStatus('Saving milestones...');
+  try {
+    const r1 = await saveSetting('milestones.lifetime_steps', l.join(','));
+    const r2 = await saveSetting('milestones.attendance_weeks', a.join(','));
+    if ((r1 && r1.ok) && (r2 && r2.ok)) {
+      showStatus('✓ Milestones saved', 'ok');
+      updateMsPreview();
+      // optional: reload to reflect changes in list
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      showStatus('✗ Error saving milestones', 'err');
+    }
+  } catch (e) {
+    showStatus('✗ Error saving milestones', 'err');
+  }
+});
+
+document.getElementById('resetMsBtn').addEventListener('click', async () => {
+  if (!confirm('Reset milestones to recommended defaults?')) return;
+  const defaultsLifetime = '100000,250000,500000,750000,1000000';
+  const defaultsAttendance = '25,50,100';
+  document.getElementById('msLifetime').value = defaultsLifetime;
+  document.getElementById('msAttendance').value = defaultsAttendance;
+  updateMsPreview();
+  // Save defaults
+  try {
+    showStatus('Saving defaults...');
+    const r1 = await saveSetting('milestones.lifetime_steps', defaultsLifetime);
+    const r2 = await saveSetting('milestones.attendance_weeks', defaultsAttendance);
+    if ((r1 && r1.ok) && (r2 && r2.ok)) {
+      showStatus('✓ Defaults saved', 'ok');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showStatus('✗ Error saving defaults', 'err');
+    }
+  } catch (e) {
+    showStatus('✗ Error saving defaults', 'err');
+  }
+});
+
+// Initialize
+loadMilestones();
+
 </script>
 </body>
 </html>
