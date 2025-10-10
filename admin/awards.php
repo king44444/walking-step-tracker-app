@@ -168,6 +168,7 @@ try {
       <div class="row">
         <button class="btn primary" id="genBtn">Generate Image</button>
       </div>
+      <div id="awStatus" class="muted" style="margin-top:8px"></div>
     </div>
 
     <!-- Batch Operations -->
@@ -323,19 +324,20 @@ async function freshCsrf() {
   } catch(e) { return CSRF; }
 }
 
-// Generate single award
+ // Generate single award
 document.getElementById('genBtn').addEventListener('click', async () => {
   const uid = parseInt(document.getElementById('genUser').value, 10) || 0;
   const kind = document.getElementById('genKind').value.trim();
   const val = parseInt(document.getElementById('genValue').value, 10) || 0;
   const force = document.getElementById('genForce').checked;
+  const status = document.getElementById('awStatus');
   
   if (!uid || !kind || !val) {
     alert('Please select user, kind, and milestone');
     return;
   }
   
-  showStatus('Generating image...');
+  status.textContent = 'Generating…';
   try {
     const tk = await freshCsrf();
     const res = await fetch(base + 'api/award_generate.php', {
@@ -346,45 +348,74 @@ document.getElementById('genBtn').addEventListener('click', async () => {
     const j = await res.json();
     
     if (j && j.ok && j.skipped) {
-      showStatus('Skipped: ' + (j.reason || 'already exists'), 'info');
+      status.textContent = 'Skipped: ' + (j.reason || 'already exists');
     } else if (j && j.ok) {
-      showStatus('✓ Generated: ' + (j.path || ''), 'ok');
+      status.textContent = '✓ Generated: ' + (j.path || '');
       setTimeout(() => location.reload(), 1500);
     } else {
-      showStatus('✗ Error: ' + (j && j.error ? j.error : 'failed'), 'err');
+      status.textContent = '✗ Error: ' + (j && j.error ? j.error : 'failed');
     }
   } catch (e) {
-    showStatus('✗ Error generating image', 'err');
+    status.textContent = '✗ Error generating image';
   }
 });
 
-// Regenerate missing
+ // Regenerate missing
 document.getElementById('regenMissingBtn').addEventListener('click', async () => {
   const kind = document.getElementById('batchKind').value.trim();
+  const status = document.getElementById('awStatus');
+  const btn = document.getElementById('regenMissingBtn');
   
   if (!confirm('Regenerate all missing award images' + (kind ? ' for ' + kind : '') + '?')) {
     return;
   }
   
-  showStatus('Regenerating missing images...');
+  // Disable button during processing
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  
+  let totalGenerated = 0;
+  let totalErrors = 0;
+  let batchCount = 0;
+  
   try {
-    const body = kind ? JSON.stringify({ kind }) : JSON.stringify({});
-    const tk = await freshCsrf();
-    const res = await fetch(base + 'api/award_regen_missing.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
-      body
-    });
-    const j = await res.json();
-    
-    if (j && j.ok) {
-      showStatus(`✓ Generated: ${j.generated || 0}, Errors: ${j.errors || 0}`, 'ok');
-      setTimeout(() => location.reload(), 2000);
-    } else {
-      showStatus('✗ Error: ' + (j && j.error ? j.error : 'failed'), 'err');
+    // Process in batches until all are complete
+    while (true) {
+      batchCount++;
+      status.textContent = `Processing batch ${batchCount}...`;
+      
+      const body = (kind && kind !== 'custom') ? JSON.stringify({ kind, limit: 10 }) : JSON.stringify({ limit: 10 });
+      const tk = await freshCsrf();
+      const res = await fetch(base + 'api/award_regen_missing.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': tk }, body });
+      const j = await res.json();
+      
+      if (!j || !j.ok) {
+        status.textContent = 'Error: ' + (j && j.error ? j.error : 'failed');
+        break;
+      }
+      
+      totalGenerated += (j.generated || 0);
+      totalErrors += (j.errors || 0);
+      const remaining = j.remaining || 0;
+      const total = j.total_missing || 0;
+      
+      // Update status with progress
+      if (remaining > 0) {
+        status.textContent = `Progress: ${totalGenerated} generated, ${totalErrors} errors, ${remaining} remaining...`;
+        // Small delay between batches to avoid overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        // All done
+        status.textContent = `✓ Complete: ${totalGenerated} generated, ${totalErrors} errors (from ${total} missing)`;
+        break;
+      }
     }
   } catch (e) {
-    showStatus('✗ Error regenerating', 'err');
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    // Re-enable button
+    btn.disabled = false;
+    btn.textContent = 'Regenerate Missing Images';
   }
 });
 
