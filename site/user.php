@@ -107,6 +107,17 @@ $rank = $higher + 1;
    }
  } 
 
+// small helper to pick chip color classes that match the dashboard JS
+function badge_class_for_steps(int $steps): array {
+  if ($steps >= 30000) return ['bg'=>'bg-emerald-500/15','text'=>'text-emerald-300'];
+  if ($steps >= 20000) return ['bg'=>'bg-yellow-500/15','text'=>'text-yellow-300'];
+  if ($steps >= 15000) return ['bg'=>'bg-lime-500/15','text'=>'text-lime-300'];
+  if ($steps >= 10000) return ['bg'=>'bg-green-500/15','text'=>'text-green-300'];
+  if ($steps >= 2500)  return ['bg'=>'bg-cyan-500/15','text'=>'text-cyan-300'];
+  if ($steps >= 1000)  return ['bg'=>'bg-blue-500/15','text'=>'text-blue-300'];
+  return ['bg'=>'bg-white/5','text'=>'text-white/70'];
+}
+
 // awards
 $aw = $pdo->prepare('SELECT kind, milestone_value, image_path, created_at FROM ai_awards WHERE user_id = :id ORDER BY created_at ASC');
 $aw->execute([':id'=>$id]);
@@ -164,7 +175,7 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
       <div class="card p-4">
         <div class="kicker">Lifetime</div>
         <h3 class="text-xl font-bold">Totals</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2 text-center">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-2 text-center">
           <div class="bg-white/5 rounded-lg p-3">
             <div class="text-xs text-white/60">Total Steps</div>
             <div class="text-2xl font-extrabold stat"><?= number_format($total) ?></div>
@@ -181,6 +192,10 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
             <div class="text-xs text-white/60">Weeks</div>
             <div class="text-2xl font-extrabold stat"><?= number_format($weeks) ?></div>
           </div>
+          <div class="bg-white/5 rounded-lg p-3">
+            <div class="text-xs text-white/60">Days</div>
+            <div class="text-2xl font-extrabold stat"><?= number_format($days) ?></div>
+          </div>
         </div>
         <div class="mt-2 text-white/70 text-sm">Rank: #<?= (int)$rank ?></div>
       </div>
@@ -188,20 +203,37 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
       <div class="card p-4">
         <div class="kicker">Milestones</div>
         <h3 class="text-xl font-bold">Daily Milestone Counts</h3>
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div class="mt-3 flex flex-wrap gap-2 items-start">
           <?php if (empty($milestones)): ?>
             <div style="grid-column: 1 / -1; color: rgba(230,236,255,0.6);">No daily milestones configured.</div>
           <?php else: ?>
-            <?php foreach ($milestones as $m): 
-              $steps = $m['steps'];
-              $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
-              $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
-            ?>
-              <div class="badge bg-white/3 rounded px-3 py-2">
-                <div class="text-xs text-white/60"><?= $label ?></div>
-                <div class="text-lg font-semibold"><?= $count ?></div>
-              </div>
-            <?php endforeach; ?>
+            <div class="flex-1 flex flex-wrap gap-2">
+              <?php foreach ($milestones as $m):
+                $steps = (int)$m['steps'];
+                $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
+                $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
+                $cls = badge_class_for_steps($steps);
+              ?>
+                <div>
+                  <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?>"><?= $label ?></span>
+                  <div class="text-xs text-white/60 mt-1"><?= $count ?></div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+
+            <div class="w-full md:w-56 mt-4 md:mt-0 text-sm text-white/60">
+              <div class="font-semibold text-white/80 mb-2">Legend</div>
+              <?php foreach ($milestones as $m):
+                $steps = (int)$m['steps'];
+                $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
+                $cls = badge_class_for_steps($steps);
+              ?>
+                <div class="flex items-center gap-3 mb-2">
+                  <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?>"><?= $label ?></span>
+                  <div class="text-white/60"><?= number_format($steps) ?> steps</div>
+                </div>
+              <?php endforeach; ?>
+            </div>
           <?php endif; ?>
         </div>
       </div>
