@@ -15,14 +15,23 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
     $thresholds = [100000, 250000, 500000, 750000, 1000000];
     $awards = [];
     
+    // Get user name from user ID
+    $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = :uid");
+    $userStmt->execute([':uid' => $userId]);
+    $userName = $userStmt->fetchColumn();
+    
+    if (!$userName) {
+        return []; // User not found
+    }
+    
     // Get user's total steps
     $totalStmt = $pdo->prepare("
-        SELECT COALESCE(SUM(COALESCE(mon,0) + COALESCE(tue,0) + COALESCE(wed,0) + 
-                            COALESCE(thu,0) + COALESCE(fri,0) + COALESCE(sat,0)), 0) AS total
+        SELECT COALESCE(SUM(COALESCE(monday,0) + COALESCE(tuesday,0) + COALESCE(wednesday,0) + 
+                            COALESCE(thursday,0) + COALESCE(friday,0) + COALESCE(saturday,0)), 0) AS total
         FROM entries
-        WHERE user_id = :uid
+        WHERE name = :name
     ");
-    $totalStmt->execute([':uid' => $userId]);
+    $totalStmt->execute([':name' => $userName]);
     $totalSteps = (int)$totalStmt->fetchColumn();
     
     foreach ($thresholds as $threshold) {
@@ -90,15 +99,24 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
  * @return string|null ISO date YYYY-MM-DD or null if not reached
  */
 function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
+    // Get user name
+    $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = :uid");
+    $userStmt->execute([':uid' => $userId]);
+    $userName = $userStmt->fetchColumn();
+    
+    if (!$userName) {
+        return null;
+    }
+    
     // Get all entries for user with week start dates, ordered chronologically
     $stmt = $pdo->prepare("
-        SELECT e.mon, e.tue, e.wed, e.thu, e.fri, e.sat, w.starts_on
+        SELECT e.monday, e.tuesday, e.wednesday, e.thursday, e.friday, e.saturday, w.starts_on
         FROM entries e
-        JOIN weeks w ON e.week_id = w.id
-        WHERE e.user_id = :uid
+        JOIN weeks w ON e.week = w.week
+        WHERE e.name = :name
         ORDER BY w.starts_on ASC
     ");
-    $stmt->execute([':uid' => $userId]);
+    $stmt->execute([':name' => $userName]);
     $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     if (empty($entries)) {
@@ -110,12 +128,12 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
     foreach ($entries as $entry) {
         $weekStart = $entry['starts_on'];
         $daySteps = [
-            'monday' => $entry['mon'],
-            'tuesday' => $entry['tue'],
-            'wednesday' => $entry['wed'],
-            'thursday' => $entry['thu'],
-            'friday' => $entry['fri'],
-            'saturday' => $entry['sat']
+            'monday' => $entry['monday'],
+            'tuesday' => $entry['tuesday'],
+            'wednesday' => $entry['wednesday'],
+            'thursday' => $entry['thursday'],
+            'friday' => $entry['friday'],
+            'saturday' => $entry['saturday']
         ];
         
         $expanded = expand_week_to_daily_dates($weekStart, $daySteps);
