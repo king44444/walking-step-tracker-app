@@ -107,7 +107,7 @@ ai.image.provider|openrouter ← Now present
 **Environment Check**:
 ```bash
 $ grep OPENROUTER /var/www/public_html/dev/html/walk/.env
-OPENROUTER_API_KEY="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"
+OPENROUTER_API_KEY="sk-or-v"
 ```
 
 ---

@@ -222,20 +222,60 @@ function ai_image_provider_generate(string $prompt, array $params): array {
   $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
   $err = curl_error($ch);
   curl_close($ch);
+
+  // Debug: persist provider HTTP response and error info for diagnosis
+  $debugDir = dirname(__DIR__,2) . '/data/logs/ai';
+  if (!is_dir($debugDir)) { @mkdir($debugDir, 0775, true); }
+  $resLen = is_string($res) ? strlen($res) : 0;
+  $dbgMsg = sprintf("[%s] provider_debug model=%s http=%d err=%s res_len=%d\n", date('c'), $model, $http, $err ?: '', $resLen);
+  @file_put_contents($debugDir . '/provider_debug.log', $dbgMsg, FILE_APPEND);
+  if (is_string($res) && $resLen > 0) {
+    @file_put_contents($debugDir . '/provider_debug.log', substr($res, 0, 20000) . "\n\n", FILE_APPEND);
+  }
+
   if ($res === false || $http >= 400) {
     return ['ok'=>false, 'error'=>'http_' . $http, 'err'=>$err ?: ''];
   }
   $json = json_decode($res, true);
   if (!is_array($json) || !isset($json['choices'][0]['message'])) {
+    @file_put_contents($debugDir . '/provider_debug.log', date('c') . " bad_response: " . substr((string)$res,0,2000) . "\n\n", FILE_APPEND);
     return ['ok'=>false, 'error'=>'bad_response'];
   }
   $message = $json['choices'][0]['message'];
-  if (!isset($message['images'][0]['image_url']['url'])) {
+
+  // Support multiple OpenRouter response shapes:
+  // 1) structured images array: message.images[0].image_url.url
+  // 2) textual content containing a data: URL or a JSON blob with image_data_url
+  $dataUrl = null;
+  if (isset($message['images'][0]['image_url']['url'])) {
+    $dataUrl = (string)$message['images'][0]['image_url']['url'];
+  } elseif (isset($message['content']) && is_string($message['content'])) {
+    $content = $message['content'];
+    @file_put_contents($debugDir . '/provider_debug.log', date('c') . " message_content: " . substr($content,0,2000) . "\n\n", FILE_APPEND);
+
+    // Try to find a data: URL inline in the content
+    if (preg_match('~data:[^\\s\\'\"\\)]+~', $content, $m)) {
+      $dataUrl = $m[0];
+    } else {
+      // Try to decode JSON embedded in content (strip code fences/backticks)
+      $trimmed = trim($content, "` \n\r\t");
+      $maybe = json_decode($trimmed, true);
+      if (is_array($maybe) && isset($maybe['image_data_url'])) {
+        $dataUrl = (string)$maybe['image_data_url'];
+      }
+    }
+  }
+
+  if ($dataUrl === null) {
+    @file_put_contents($debugDir . '/provider_debug.log', date('c') . " no_images: " . substr((string)$res,0,2000) . "\n\n", FILE_APPEND);
     return ['ok'=>false, 'error'=>'no_images'];
   }
-  $dataUrl = (string)$message['images'][0]['image_url']['url'];
+
   $parsed = ai_image_parse_data_url($dataUrl);
-  if ($parsed === null) return ['ok'=>false, 'error'=>'decode_failed'];
+  if ($parsed === null) {
+    @file_put_contents($debugDir . '/provider_debug.log', date('c') . " decode_failed: " . substr((string)$dataUrl,0,500) . "\n\n", FILE_APPEND);
+    return ['ok'=>false, 'error'=>'decode_failed'];
+  }
   $out = [ 'ok'=>true, 'image_bytes'=>$parsed['bytes'], 'mime'=>$parsed['mime'] ];
   // Optional cost metadata if present
   if (isset($json['usage']['total_cost'])) $out['cost_usd'] = (float)$json['usage']['total_cost'];

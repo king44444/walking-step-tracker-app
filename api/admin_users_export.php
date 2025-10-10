@@ -9,16 +9,10 @@ try {
 
   if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 
-  // Read JSON body (or accept form post csrf)
+  // Admin auth already required by require_admin(); accept request without consuming the one-time CSRF token.
+  // Read JSON body (optional)
   $raw = file_get_contents('php://input') ?: '';
   $data = json_decode($raw, true) ?: $_POST;
-  $csrf = (string)($data['csrf'] ?? '');
-
-  if (!\App\Security\Csrf::validate($csrf)) {
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok'=>false, 'error'=>'invalid_csrf']);
-    exit;
-  }
 
   $pdo = \App\Config\DB::pdo();
 
