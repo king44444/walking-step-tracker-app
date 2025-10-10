@@ -5,12 +5,12 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../vendor/autoload.php';
 App\Core\Env::bootstrap(dirname(__DIR__));
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 require_once __DIR__ . '/lib/admin_auth.php';
 require_once __DIR__ . '/lib/settings.php';
+require_once __DIR__ . '/../app/Security/Csrf.php';
 
 require_admin();
-if (session_status() !== PHP_SESSION_ACTIVE) session_start();
-require_once __DIR__ . '/../app/Security/Csrf.php';
 
 function json_input_assoc(): array {
   $raw = file_get_contents('php://input') ?: '';
@@ -38,4 +38,3 @@ try {
   http_response_code(500);
   echo json_encode(['error'=>'server_error']);
 }
-
