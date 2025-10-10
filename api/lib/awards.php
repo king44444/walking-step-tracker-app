@@ -34,12 +34,26 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
     $totalStmt->execute([':name' => $userName]);
     $totalSteps = (int)$totalStmt->fetchColumn();
     
+    // Get image paths from ai_awards table
+    $imageStmt = $pdo->prepare("
+        SELECT milestone_value, image_path 
+        FROM ai_awards 
+        WHERE user_id = :uid AND kind = 'lifetime_steps' AND milestone_value IN (100000, 250000, 500000, 750000, 1000000)
+    ");
+    $imageStmt->execute([':uid' => $userId]);
+    $imagePaths = [];
+    while ($row = $imageStmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!empty($row['image_path'])) {
+            $imagePaths[(int)$row['milestone_value']] = 'site/' . $row['image_path'];
+        }
+    }
+    
     foreach ($thresholds as $threshold) {
         $key = "lifetime_{$threshold}";
         $earned = $totalSteps >= $threshold;
         
-        // Find the most recent award image for this threshold
-        $imageUrl = find_award_image($userId, $threshold);
+        // Get image path from ai_awards table or use fallback
+        $imageUrl = $imagePaths[$threshold] ?? 'site/assets/admin/no-photo.svg';
         $thumbUrl = $imageUrl; // Use same image for thumb (no separate thumbs directory)
         
         $award = [
