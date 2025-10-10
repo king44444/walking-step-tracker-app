@@ -1,6 +1,13 @@
-Purpose
-- Capture repo conventions, deployment facts, and “gotchas” for future agents/humans.
-- Scope: entire repository.
+# Agent Instructions
+
+## Purpose
+Capture repo conventions, deployment facts, and "gotchas" for future agents/humans working on the King Walk Week project.
+
+## Critical Workflow Rules
+**ALWAYS deploy and commit after making code changes:**
+1. Deploy first: `./scripts/deploy_to_pi.sh`
+2. Then commit: `git add -A && git commit -m "Description" && git push`
+3. Never skip these steps after modifying code
 
 Pathing Rules
 - Public site pages under `site/` must not assume domain-root. Use relative paths.
@@ -58,4 +65,3 @@ Quick Tasks for Future Agents
 - Fix asset path regressions: follow the Pathing Rules above.
 - Add weeks or entries features: follow Weeks Normalization and API Contracts.
 - Before changing UI code under `site/`, prefer updating `public/assets/js/app/` once and consume it from `site/` via relative path.
-

@@ -20,7 +20,6 @@ function ai_image_can_generate(): bool {
   // Read fresh from DB to avoid stale in-process caches
   $pdo = settings_pdo();
   settings_ensure_schema($pdo);
-  settings_seed_defaults($pdo);
   $st = $pdo->prepare('SELECT key, value FROM settings WHERE key IN ("ai.enabled","ai.award.enabled")');
   $st->execute();
   $flags = ['ai.enabled'=>'1','ai.award.enabled'=>'1'];

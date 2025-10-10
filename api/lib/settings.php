@@ -45,8 +45,6 @@ function setting_get(string $key, $default=null) {
   if (array_key_exists($key, $cache)) return $cache[$key];
   $pdo = settings_pdo();
   settings_ensure_schema($pdo);
-  // Ensure defaults exist
-  if ($key === 'ai.enabled') { settings_seed_defaults($pdo); }
   $st = $pdo->prepare('SELECT value FROM settings WHERE key = :k LIMIT 1');
   $st->execute([':k' => $key]);
   $val = $st->fetchColumn();
