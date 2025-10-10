@@ -44,7 +44,13 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
     $imagePaths = [];
     while ($row = $imageStmt->fetch(PDO::FETCH_ASSOC)) {
         if (!empty($row['image_path'])) {
-            $imagePaths[(int)$row['milestone_value']] = 'site/' . $row['image_path'];
+            // image_path from ai_awards is like "awards/7/lifetime-steps-100000-20251010.webp"
+            // We need "assets/awards/7/..." for the site structure
+            $path = $row['image_path'];
+            if (strpos($path, 'awards/') === 0) {
+                $path = 'assets/' . $path;
+            }
+            $imagePaths[(int)$row['milestone_value']] = $path;
         }
     }
     
@@ -53,7 +59,7 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
         $earned = $totalSteps >= $threshold;
         
         // Get image path from ai_awards table or use fallback
-        $imageUrl = $imagePaths[$threshold] ?? 'site/assets/admin/no-photo.svg';
+        $imageUrl = $imagePaths[$threshold] ?? 'assets/admin/no-photo.svg';
         $thumbUrl = $imageUrl; // Use same image for thumb (no separate thumbs directory)
         
         $award = [
