@@ -198,6 +198,11 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
         <button class="btn" type="submit">Add all active to week</button>
       </form>
+
+      <!-- Users backup/restore -->
+      <button class="btn" type="button" id="downloadUsersBtn" title="Download users table as JSON">Download JSON</button>
+      <button class="btn" type="button" id="uploadUsersBtn" title="Upload users JSON to restore">Upload JSON</button>
+      <input type="file" id="usersJsonFile" accept=".json,application/json" style="display:none" />
     </div>
 
       <?php if ($users): ?>
@@ -324,7 +329,78 @@ $allUsers = $pdo->query("SELECT id,name FROM users ORDER BY LOWER(name)")->fetch
       });
     });
   }
-})();
+  })();
+
+  // Backup / restore users JSON
+  (function(){
+    const KW_CSRF = <?= json_encode($csrfToken) ?>;
+    const downloadBtn = document.getElementById('downloadUsersBtn');
+    const uploadBtn = document.getElementById('uploadUsersBtn');
+    const fileInput = document.getElementById('usersJsonFile');
+
+    async function downloadUsersJSON() {
+      try {
+        const resp = await fetch('../api/admin_users_export.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csrf: KW_CSRF })
+        });
+        const json = await resp.json();
+        if (!json || !json.ok) {
+          alert('Export failed: ' + (json && (json.error || JSON.stringify(json)) || 'unknown error'));
+          return;
+        }
+        const data = JSON.stringify(json.users, null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'users-backup-' + new Date().toISOString().slice(0,10) + '.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Export error: ' + (e && e.message || e));
+      }
+    }
+
+    uploadBtn && uploadBtn.addEventListener('click', function(){
+      if (fileInput) fileInput.click();
+    });
+
+    fileInput && fileInput.addEventListener('change', async function(){
+      const f = this.files && this.files[0];
+      if (!f) return;
+      if (!confirm('Uploading a users backup will modify the users table. Proceed?')) { this.value = ''; return; }
+      try {
+        const text = await f.text();
+        let payload;
+        try { payload = JSON.parse(text); } catch(err) { alert('Invalid JSON file.'); this.value=''; return; }
+        const users = Array.isArray(payload) ? payload : (payload.users || payload.data || null);
+        if (!users || !Array.isArray(users)) { alert('JSON must be an array of users or an object with a "users" array.'); this.value=''; return; }
+        const resp = await fetch('../api/admin_users_import.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csrf: KW_CSRF, users: users })
+        });
+        const res = await resp.json();
+        if (res && res.ok) {
+          alert('Import complete. Inserted: ' + (res.inserted||0) + ', Updated: ' + (res.updated||0));
+          window.location.reload();
+        } else {
+          alert('Import failed: ' + (res && (res.error || JSON.stringify(res)) || 'unknown'));
+        }
+      } catch (e) {
+        alert('Import error: ' + (e && e.message || e));
+      } finally {
+        this.value = '';
+      }
+    });
+
+    downloadBtn && downloadBtn.addEventListener('click', downloadUsersJSON);
+  })();
+
 </script>
 </body>
 </html>
