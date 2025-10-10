@@ -28,7 +28,7 @@ async function initUserAwards(userId) {
  * Fetch awards from API
  */
 async function fetchAwards(userId) {
-  const response = await fetch(`/api/user_awards.php?user_id=${userId}&type=lifetime`);
+  const response = await fetch(`../api/user_awards.php?user_id=${userId}&type=lifetime`);
   
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
