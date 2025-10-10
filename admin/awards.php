@@ -238,6 +238,11 @@ try {
                 <td>
                   <a href="../site/user.php?id=<?= (int)$a['user_id'] ?>" class="link" target="_blank">View Page</a>
                   <button class="btn warn delete-award-btn" data-id="<?= (int)$a['id'] ?>" style="margin-left:8px">Delete</button>
+                  <button class="btn" style="margin-left:8px" 
+                    data-user="<?= (int)$a['user_id'] ?>" 
+                    data-kind="<?= htmlspecialchars($a['kind']) ?>" 
+                    data-value="<?= (int)$a['milestone_value'] ?>" 
+                    class="regen-award-btn">Regen</button>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -387,6 +392,35 @@ document.getElementById('clearCacheBtn').addEventListener('click', async () => {
        }
      } catch (err) {
        showStatus('✗ Error deleting award', 'err');
+     }
+   });
+ });
+
+ // Regen award (force regenerate image)
+ document.querySelectorAll('.regen-award-btn').forEach(btn => {
+   btn.addEventListener('click', async (e) => {
+     const userId = btn.getAttribute('data-user');
+     const kind = btn.getAttribute('data-kind');
+     const val = btn.getAttribute('data-value');
+     if (!userId || !kind || !val) return;
+     if (!confirm('Regenerate the award image for this user and milestone?')) return;
+     showStatus('Regenerating image...');
+     try {
+       const tk = await freshCsrf();
+       const res = await fetch(base + 'api/award_generate.php', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json', 'X-CSRF': tk },
+         body: JSON.stringify({ user_id: parseInt(userId, 10), kind: kind, milestone_value: parseInt(val,10), force: true })
+       });
+       const j = await res.json();
+       if (j && j.ok) {
+         showStatus('✓ Regenerated', 'ok');
+         setTimeout(() => location.reload(), 1500);
+       } else {
+         showStatus('✗ Error regenerating image', 'err');
+       }
+     } catch (err) {
+       showStatus('✗ Error regenerating image', 'err');
      }
    });
  });
