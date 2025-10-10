@@ -325,9 +325,9 @@ try {
   document.getElementById('saveModelBtn').addEventListener('click', saveModel);
   document.getElementById('saveAutosendBtn').addEventListener('click', saveAutosend);
   document.getElementById('saveCatsBtn').addEventListener('click', async ()=>{
-    const CSRF = "<?= htmlspecialchars($csrf) ?>";
     const sset = async (key,val)=>{
-      await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':CSRF}, body: JSON.stringify({ key, value: !!val, csrf: CSRF }) });
+      const tk = await freshCsrf();
+      await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body: JSON.stringify({ key, value: !!val, csrf: tk }) });
     };
     await sset('ai.nudge.enabled', document.getElementById('aiNudgeChk').checked);
     await sset('ai.recap.enabled', document.getElementById('aiRecapChk').checked);
