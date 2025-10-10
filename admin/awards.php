@@ -263,7 +263,7 @@ try {
                           $src = '../site/assets/' . $normalized;
                         }
                       }
-                      echo '<img src="' . htmlspecialchars($src) . '" class="img-thumb" alt="Award" onerror="this.style.display=\\'none\\'">';
+                      echo '<img src="' . htmlspecialchars($src) . '" class="img-thumb" alt="Award" onerror="this.style.display=\'none\'">';
                     } else {
                       echo '<div class="img-thumb" style="background:rgba(255,255,255,0.05)"></div>';
                     }
