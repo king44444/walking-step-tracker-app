@@ -126,6 +126,14 @@ class SmsController
             $msg = $this->handleRemindersWhen($pdo, $name, trim($m[1]));
             \App\Http\Responders\SmsResponder::ok($msg);
             return;
+        } elseif ($body_upper === 'STOP') {
+            $msg = $this->handleStopCommand($pdo, $userId, $e164);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif ($body_upper === 'START') {
+            $msg = $this->handleStartCommand($pdo, $userId, $e164);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
         } elseif ($body_upper === 'UNDO' && $ctx['is_admin']) {
             $msg = $this->handleUndoCommand($pdo, $name);
             \App\Http\Responders\SmsResponder::ok($msg);
@@ -543,6 +551,32 @@ class SmsController
         $stmt = $pdo->prepare("UPDATE entries SET {$lastDay} = NULL, updated_at = datetime('now') WHERE week = ? AND name = ?");
         $stmt->execute([$week, $name]);
         return "Undid last entry.";
+    }
+
+    private function handleStopCommand(\PDO $pdo, int $userId, string $e164): string
+    {
+        // Set opted out flag
+        $stmt = $pdo->prepare("UPDATE users SET phone_opted_out = 1 WHERE id = ?");
+        $stmt->execute([$userId]);
+
+        // Log the STOP action
+        $stmt = $pdo->prepare("INSERT INTO sms_consent_log(user_id, action, phone_number, created_at) VALUES(?, 'STOP', ?, datetime('now'))");
+        $stmt->execute([$userId, $e164]);
+
+        return "You have been opted out of reminders. Reply START to opt back in.";
+    }
+
+    private function handleStartCommand(\PDO $pdo, int $userId, string $e164): string
+    {
+        // Clear opted out flag
+        $stmt = $pdo->prepare("UPDATE users SET phone_opted_out = 0 WHERE id = ?");
+        $stmt->execute([$userId]);
+
+        // Log the START action
+        $stmt = $pdo->prepare("INSERT INTO sms_consent_log(user_id, action, phone_number, created_at) VALUES(?, 'START', ?, datetime('now'))");
+        $stmt->execute([$userId, $e164]);
+
+        return "You have been opted back in to reminders.";
     }
 
     private function handleLifetimeAward(\PDO $pdo, int $userId, string $name, string $e164): void

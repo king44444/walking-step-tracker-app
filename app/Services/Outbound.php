@@ -8,6 +8,22 @@ final class Outbound
 {
     public static function sendSMS(string $to, string $body): ?string
     {
+        // Check if recipient has opted out
+        $pdo = DB::pdo();
+        $stmt = $pdo->prepare("SELECT phone_opted_out FROM users WHERE phone_e164 = ?");
+        $stmt->execute([$to]);
+        $optedOut = $stmt->fetchColumn();
+        if ($optedOut) {
+            // Log as blocked due to opt-out
+            $ins = $pdo->prepare("INSERT INTO sms_outbound_audit(created_at,to_number,body,http_code,sid,error) VALUES(datetime('now'),?,?,null,null,'User opted out')");
+            try {
+                $ins->execute([$to, $body]);
+            } catch (\Throwable $e) {
+                error_log('Outbound::sendSMS audit insert failed: ' . $e->getMessage());
+            }
+            return null; // Block the send
+        }
+
         // Read Twilio credentials from environment (Dotenv populates $_ENV)
         $accountSid = $_ENV['TWILIO_ACCOUNT_SID'] ?? null;
         $authToken  = $_ENV['TWILIO_AUTH_TOKEN'] ?? null;

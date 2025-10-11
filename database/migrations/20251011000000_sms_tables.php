@@ -64,5 +64,27 @@ class SmsTables extends AbstractMigration
             ->addColumn('user_id', 'integer')
             ->addColumn('last_ai_at', 'datetime', ['null' => true])
             ->create();
+
+        // SMS consent log table (for STOP/START tracking)
+        $this->table('sms_consent_log', ['id' => false, 'primary_key' => 'id'])
+            ->addColumn('id', 'integer', ['identity' => true])
+            ->addColumn('user_id', 'integer', ['null' => false])
+            ->addColumn('action', 'string', ['null' => false]) // 'STOP' or 'START'
+            ->addColumn('phone_number', 'string', ['null' => false])
+            ->addColumn('created_at', 'datetime', ['null' => false])
+            ->addIndex(['user_id'])
+            ->addIndex(['action'])
+            ->create();
+
+        // Reminders log table (prevent duplicate daily sends)
+        $this->table('reminders_log', ['id' => false, 'primary_key' => 'id'])
+            ->addColumn('id', 'integer', ['identity' => true])
+            ->addColumn('user_id', 'integer', ['null' => false])
+            ->addColumn('sent_on_date', 'string', ['null' => false]) // YYYY-MM-DD
+            ->addColumn('when_sent', 'string', ['null' => false]) // 'MORNING', 'EVENING', 'HH:MM'
+            ->addColumn('created_at', 'datetime', ['null' => false])
+            ->addIndex(['user_id'])
+            ->addIndex(['sent_on_date'])
+            ->create();
     }
 }

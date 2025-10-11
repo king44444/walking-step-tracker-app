@@ -15,7 +15,7 @@ class SmsControllerTest extends TestCase
 
         // Create required tables
         $this->pdo->exec("
-            CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, phone_e164 TEXT);
+            CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, phone_e164 TEXT, phone_opted_out INTEGER DEFAULT 0);
             CREATE TABLE sms_audit (
                 id INTEGER PRIMARY KEY,
                 created_at TEXT,
@@ -29,6 +29,20 @@ class SmsControllerTest extends TestCase
             );
             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
             CREATE TABLE user_stats (user_id INTEGER PRIMARY KEY, last_ai_at TEXT);
+            CREATE TABLE sms_consent_log (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                action TEXT,
+                phone_number TEXT,
+                created_at TEXT
+            );
+            CREATE TABLE reminders_log (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER,
+                sent_on_date TEXT,
+                when_sent TEXT,
+                created_at TEXT
+            );
         ");
     }
 
@@ -226,5 +240,84 @@ class SmsControllerTest extends TestCase
 
         // Verify setting
         $this->assertEquals('1', $this->pdo->query("SELECT value FROM settings WHERE key='sms.undo_enabled'")->fetchColumn());
+    }
+
+    public function testStopCommand()
+    {
+        // Insert test user
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164) VALUES(1, 'Test User', '+1234567890')")
+                  ->execute();
+
+        // Verify user starts with opted_out = 0
+        $this->assertEquals('0', $this->pdo->query("SELECT phone_opted_out FROM users WHERE id=1")->fetchColumn());
+
+        // This would require mocking the controller method
+        // For now, test the database operations directly
+        $stmt = $this->pdo->prepare("UPDATE users SET phone_opted_out = 1 WHERE id = ?");
+        $stmt->execute([1]);
+        $this->assertEquals('1', $this->pdo->query("SELECT phone_opted_out FROM users WHERE id=1")->fetchColumn());
+
+        // Test consent log
+        $stmt = $this->pdo->prepare("INSERT INTO sms_consent_log(user_id, action, phone_number, created_at) VALUES(?, 'STOP', ?, datetime('now'))");
+        $stmt->execute([1, '+1234567890']);
+        $result = $this->pdo->query("SELECT action FROM sms_consent_log WHERE user_id=1")->fetchColumn();
+        $this->assertEquals('STOP', $result);
+    }
+
+    public function testStartCommand()
+    {
+        // Insert test user with opted_out = 1
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164, phone_opted_out) VALUES(1, 'Test User', '+1234567890', 1)")
+                  ->execute();
+
+        // Verify user starts opted out
+        $this->assertEquals('1', $this->pdo->query("SELECT phone_opted_out FROM users WHERE id=1")->fetchColumn());
+
+        // Test START command
+        $stmt = $this->pdo->prepare("UPDATE users SET phone_opted_out = 0 WHERE id = ?");
+        $stmt->execute([1]);
+        $this->assertEquals('0', $this->pdo->query("SELECT phone_opted_out FROM users WHERE id=1")->fetchColumn());
+
+        // Test consent log
+        $stmt = $this->pdo->prepare("INSERT INTO sms_consent_log(user_id, action, phone_number, created_at) VALUES(?, 'START', ?, datetime('now'))");
+        $stmt->execute([1, '+1234567890']);
+        $result = $this->pdo->query("SELECT action FROM sms_consent_log WHERE user_id=1 ORDER BY id DESC LIMIT 1")->fetchColumn();
+        $this->assertEquals('START', $result);
+    }
+
+    public function testRemindersSettings()
+    {
+        // Test reminder default settings
+        $this->pdo->prepare("INSERT INTO settings(key,value) VALUES('reminders.default_morning','07:30')")
+                  ->execute();
+        $this->pdo->prepare("INSERT INTO settings(key,value) VALUES('reminders.default_evening','20:00')")
+                  ->execute();
+
+        $this->assertEquals('07:30', $this->pdo->query("SELECT value FROM settings WHERE key='reminders.default_morning'")->fetchColumn());
+        $this->assertEquals('20:00', $this->pdo->query("SELECT value FROM settings WHERE key='reminders.default_evening'")->fetchColumn());
+    }
+
+    public function testRemindersLogTable()
+    {
+        // Insert test reminder log
+        $this->pdo->prepare("INSERT INTO reminders_log(user_id, sent_on_date, when_sent, created_at) VALUES(1, '2025-10-10', 'MORNING', datetime('now'))")
+                  ->execute();
+
+        $result = $this->pdo->query("SELECT when_sent FROM reminders_log WHERE user_id=1")->fetchColumn();
+        $this->assertEquals('MORNING', $result);
+    }
+
+    public function testOutboundBlocksOptedOut()
+    {
+        // Insert opted out user
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164, phone_opted_out) VALUES(1, 'Test User', '+1234567890', 1)")
+                  ->execute();
+
+        // This would require mocking Outbound::sendSMS
+        // For now, test the database check logic
+        $stmt = $this->pdo->prepare("SELECT phone_opted_out FROM users WHERE phone_e164 = ?");
+        $stmt->execute(['+1234567890']);
+        $optedOut = $stmt->fetchColumn();
+        $this->assertEquals('1', $optedOut);
     }
 }

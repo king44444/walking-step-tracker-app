@@ -33,6 +33,8 @@ function settings_seed_defaults(PDO $pdo): void {
     'sms.inbound_rate_window_sec' => '60',
     'sms.ai_rate_window_sec' => '120',
     'sms.audit_retention_days' => '90',
+    'reminders.default_morning' => '07:30',
+    'reminders.default_evening' => '20:00',
     'sms.admin_prefix_enabled' => '0',
     'sms.admin_password' => '',
     'sms.undo_enabled' => '0',
