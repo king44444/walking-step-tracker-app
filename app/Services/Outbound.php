@@ -6,7 +6,7 @@ use App\Config\DB;
 
 final class Outbound
 {
-    public static function sendSMS(string $to, string $body): ?string
+    public static function sendSMS(string $to, string $body, array $mediaUrls = []): ?string
     {
         // Check if recipient has opted out
         $pdo = DB::pdo();
@@ -44,11 +44,19 @@ final class Outbound
         }
 
         $url = "https://api.twilio.com/2010-04-01/Accounts/{$accountSid}/Messages.json";
-        $post = http_build_query([
+
+        $postData = [
             'To'   => $to,
             'From' => $fromNumber,
             'Body' => $body,
-        ]);
+        ];
+
+        // Add media URLs if provided
+        foreach ($mediaUrls as $i => $mediaUrl) {
+            $postData["MediaUrl{$i}"] = $mediaUrl;
+        }
+
+        $post = http_build_query($postData);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_POST, true);

@@ -26,4 +26,11 @@ $adminUsers = new \App\Controllers\AdminUsersController();
 $router->add('GET', '/admin/users', [$adminUsers, 'index']);
 $router->add('POST', '/admin/users/save', [$adminUsers, 'save']);
 
+$adminSms = new \App\Controllers\AdminSmsController();
+$router->add('GET', '/admin/sms', [$adminSms, 'index']);
+$router->add('POST', '/admin/sms/send', [$adminSms, 'send']);
+$router->add('POST', '/admin/sms/upload', [$adminSms, 'upload']);
+$router->add('GET', '/admin/sms/messages', [$adminSms, 'messages']);
+$router->add('POST', '/admin/sms/start-user', [$adminSms, 'startUser']);
+
 return $router;

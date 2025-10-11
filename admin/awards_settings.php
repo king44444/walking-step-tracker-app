@@ -77,6 +77,47 @@ $csrf = \App\Security\Csrf::token();
       </div>
     </div>
   </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px 0">SMS Settings</h2>
+    <div class="muted" style="margin-bottom:8px">Configure SMS behavior, admin controls, and rate limits.</div>
+
+    <div class="row">
+      <label>sms.admin_prefix_enabled: <input type="checkbox" id="smsAdminPrefixEnabled"></label>
+    </div>
+    <div class="row">
+      <label>sms.admin_password: <input type="text" id="smsAdminPassword" placeholder="password"></label>
+    </div>
+    <div class="row">
+      <label>app.public_base_url: <input type="text" id="appPublicBaseUrl" placeholder="https://example.com"></label>
+    </div>
+    <div class="row">
+      <label>sms.inbound_rate_window_sec: <input type="number" id="smsInboundRateWindow" min="1" max="3600"></label>
+    </div>
+    <div class="row">
+      <label>sms.ai_rate_window_sec: <input type="number" id="smsAiRateWindow" min="1" max="3600"></label>
+    </div>
+    <div class="row">
+      <label>sms.backfill_days: <input type="number" id="smsBackfillDays" min="0" max="365"></label>
+    </div>
+    <div class="row">
+      <label>reminders.default_morning: <input type="time" id="remindersDefaultMorning"></label>
+    </div>
+    <div class="row">
+      <label>reminders.default_evening: <input type="time" id="remindersDefaultEvening"></label>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="saveSmsSettingsBtn">Save SMS Settings</button>
+      <span id="smsSettingsStatus" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px 0">HELP Content Preview</h2>
+    <div class="muted" style="margin-bottom:8px">Current HELP text that users see when they send HELP.</div>
+    <div style="background:#07102a;border:1px solid #1e2a5a;padding:12px;border-radius:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;white-space:pre-line;" id="helpPreview"></div>
+  </div>
 </div>
 
 <script>
@@ -200,7 +241,71 @@ $csrf = \App\Security\Csrf::token();
 
   document.getElementById('reloadBtn').addEventListener('click', loadSettings);
 
+  // SMS Settings functionality
+  async function loadSmsSettings(){
+    try {
+      const res = await fetch(base + 'api/settings_get.php', { cache:'no-store' });
+      const settings = await res.json();
+
+      document.getElementById('smsAdminPrefixEnabled').checked = settings['sms.admin_prefix_enabled'] === '1';
+      document.getElementById('smsAdminPassword').value = settings['sms.admin_password'] || '';
+      document.getElementById('appPublicBaseUrl').value = settings['app.public_base_url'] || '';
+      document.getElementById('smsInboundRateWindow').value = settings['sms.inbound_rate_window_sec'] || '';
+      document.getElementById('smsAiRateWindow').value = settings['sms.ai_rate_window_sec'] || '';
+      document.getElementById('smsBackfillDays').value = settings['sms.backfill_days'] || '';
+      document.getElementById('remindersDefaultMorning').value = settings['reminders.default_morning'] || '';
+      document.getElementById('remindersDefaultEvening').value = settings['reminders.default_evening'] || '';
+
+      // Load HELP preview
+      loadHelpPreview();
+    } catch (e) {
+      console.error('loadSmsSettings error', e);
+    }
+  }
+
+  async function loadHelpPreview(){
+    try {
+      const res = await fetch(base + 'api/settings_debug.php?key=help_text', { cache:'no-store' });
+      const data = await res.json();
+      document.getElementById('helpPreview').textContent = data.value || 'HELP text not found';
+    } catch (e) {
+      document.getElementById('helpPreview').textContent = 'Failed to load HELP preview';
+    }
+  }
+
+  document.getElementById('saveSmsSettingsBtn').addEventListener('click', async () => {
+    const statusEl = document.getElementById('smsSettingsStatus');
+    if (statusEl) statusEl.textContent = 'Saving…';
+
+    const settings = [
+      { key: 'sms.admin_prefix_enabled', value: document.getElementById('smsAdminPrefixEnabled').checked ? '1' : '0' },
+      { key: 'sms.admin_password', value: document.getElementById('smsAdminPassword').value },
+      { key: 'app.public_base_url', value: document.getElementById('appPublicBaseUrl').value },
+      { key: 'sms.inbound_rate_window_sec', value: document.getElementById('smsInboundRateWindow').value },
+      { key: 'sms.ai_rate_window_sec', value: document.getElementById('smsAiRateWindow').value },
+      { key: 'sms.backfill_days', value: document.getElementById('smsBackfillDays').value },
+      { key: 'reminders.default_morning', value: document.getElementById('remindersDefaultMorning').value },
+      { key: 'reminders.default_evening', value: document.getElementById('remindersDefaultEvening').value }
+    ];
+
+    try {
+      for (const setting of settings) {
+        const r = await postJson(base + 'api/settings_set.php', setting);
+        if (!r.ok || (r.json && r.json.error)) {
+          if (statusEl) statusEl.textContent = `Save failed for ${setting.key}`;
+          return;
+        }
+      }
+      if (statusEl) statusEl.textContent = 'Saved';
+      setTimeout(()=>{ if (statusEl && statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 1200);
+      loadHelpPreview(); // Refresh HELP preview
+    } catch (e) {
+      if (statusEl) statusEl.textContent = 'Save error';
+    }
+  });
+
   await loadSettings();
+  await loadSmsSettings();
 })();
 </script>
 </body>
