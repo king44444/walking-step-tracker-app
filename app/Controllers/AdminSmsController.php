@@ -175,6 +175,8 @@ final class AdminSmsController
         // Temporarily remove auth for debugging
         // AdminAuth::require();
 
+        header('Content-Type: application/json');
+
         $userId = (int)($_GET['user_id'] ?? 0);
         if (!$userId) {
             http_response_code(400);
