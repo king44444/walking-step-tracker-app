@@ -15,12 +15,12 @@ $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
 // Route to controller methods
 if ($method === 'GET') {
-    // /admin/sms -> index
-    if (preg_match('#^/admin/sms$#', $path)) {
+    // /admin/sms.php -> index
+    if (preg_match('#^/admin/sms\.php$#', $path)) {
         echo $controller->index();
     }
-    // /admin/sms/messages -> messages
-    elseif (preg_match('#^/admin/sms/messages$#', $path)) {
+    // /admin/sms.php/messages -> messages
+    elseif (preg_match('#^/admin/sms\.php/messages$#', $path)) {
         echo $controller->messages();
     }
     else {
@@ -29,16 +29,16 @@ if ($method === 'GET') {
     }
 }
 elseif ($method === 'POST') {
-    // /admin/sms/send -> send
-    if (preg_match('#^/admin/sms/send$#', $path)) {
+    // /admin/sms.php/send -> send
+    if (preg_match('#^/admin/sms\.php/send$#', $path)) {
         echo $controller->send();
     }
-    // /admin/sms/upload -> upload
-    elseif (preg_match('#^/admin/sms/upload$#', $path)) {
+    // /admin/sms.php/upload -> upload
+    elseif (preg_match('#^/admin/sms\.php/upload$#', $path)) {
         echo $controller->upload();
     }
-    // /admin/sms/start-user -> startUser
-    elseif (preg_match('#^/admin/sms/start-user$#', $path)) {
+    // /admin/sms.php/start-user -> startUser
+    elseif (preg_match('#^/admin/sms\.php/start-user$#', $path)) {
         echo $controller->startUser();
     }
     else {
