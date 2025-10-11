@@ -15,6 +15,15 @@ class SmsController
         require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
         \App\Core\Env::bootstrap(dirname(__DIR__, 2));
 
+        // Debug logging
+        error_log('SmsController::inbound called with method: ' . ($_SERVER['REQUEST_METHOD'] ?? 'unknown'));
+        error_log('SmsController::inbound POST data: ' . json_encode($_POST));
+        error_log('SmsController::inbound SERVER: ' . json_encode([
+            'REQUEST_URI' => $_SERVER['REQUEST_URI'] ?? '',
+            'HTTP_X_TWILIO_SIGNATURE' => isset($_SERVER['HTTP_X_TWILIO_SIGNATURE']) ? 'present' : 'missing',
+            'REMOTE_ADDR' => $_SERVER['REMOTE_ADDR'] ?? '',
+        ]));
+
         $pdo = DB::pdo();
         $from = $_POST['From'] ?? '';
         $body = trim($_POST['Body'] ?? '');
