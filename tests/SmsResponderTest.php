@@ -7,19 +7,18 @@ class SmsResponderTest extends TestCase
 {
     protected function setUp(): void
     {
-        // Clean up any existing output buffering
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
+        // Start a fresh output buffer for each test
         ob_start();
     }
 
     protected function tearDown(): void
     {
-        // Clean up output buffering
-        while (ob_get_level()) {
+        if (ob_get_level() > 0) {
             ob_end_clean();
         }
+        // Clear request context between tests
+        unset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
+        unset($_GET['format']);
     }
 
     public function testOkResponseWithTwilioHeaderReturnsXml()
@@ -29,8 +28,8 @@ class SmsResponderTest extends TestCase
         SmsResponder::ok('Test message');
 
         $output = ob_get_clean();
-        $this->assertStringContains('<?xml version="1.0" encoding="UTF-8"?>', $output);
-        $this->assertStringContains('<Response><Message>Test message</Message></Response>', $output);
+        $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $output);
+        $this->assertStringContainsString('<Response><Message>Test message</Message></Response>', $output);
     }
 
     public function testOkResponseWithoutTwilioHeaderReturnsJson()
@@ -51,8 +50,8 @@ class SmsResponderTest extends TestCase
         SmsResponder::error('Error message', 'test_error', 400);
 
         $output = ob_get_clean();
-        $this->assertStringContains('<?xml version="1.0" encoding="UTF-8"?>', $output);
-        $this->assertStringContains('<Response><Message>Error message</Message></Response>', $output);
+        $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $output);
+        $this->assertStringContainsString('<Response><Message>Error message</Message></Response>', $output);
     }
 
     public function testErrorResponseWithoutTwilioHeaderReturnsJson()
@@ -86,7 +85,7 @@ class SmsResponderTest extends TestCase
         SmsResponder::ok('Test message');
 
         $output = ob_get_clean();
-        $this->assertStringContains('<?xml version="1.0" encoding="UTF-8"?>', $output);
+        $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $output);
     }
 
     public function testXmlEscaping()
@@ -96,6 +95,7 @@ class SmsResponderTest extends TestCase
         SmsResponder::ok('Message with <tags> & "quotes"');
 
         $output = ob_get_clean();
-        $this->assertStringContains('Message with <tags> & "quotes"', $output);
+        // Expect properly escaped XML content
+        $this->assertStringContainsString('Message with &lt;tags&gt; &amp; &quot;quotes&quot;', $output);
     }
 }

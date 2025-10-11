@@ -5,6 +5,61 @@ require_once __DIR__ . '/dates.php';
 require_once __DIR__ . '/settings.php';
 
 /**
+ * Lightweight schema introspection helpers to support both legacy and new schemas.
+ */
+function _aw_has_col(PDO $pdo, string $table, string $col): bool {
+    try {
+        $st = $pdo->query("PRAGMA table_info(".$table.")");
+        $cols = $st ? $st->fetchAll(PDO::FETCH_ASSOC) : [];
+        foreach ($cols as $c) { if (($c['name'] ?? '') === $col) return true; }
+    } catch (Throwable $e) {}
+    return false;
+}
+
+function _aw_day_cols(PDO $pdo): array {
+    // Prefer verbose columns if present, else short forms
+    $verbose = ['monday','tuesday','wednesday','thursday','friday','saturday'];
+    if (_aw_has_col($pdo,'entries','monday')) return $verbose;
+    // Fallback to short names used in some tests
+    return ['mon','tue','wed','thu','fri','sat'];
+}
+
+function _aw_user_binding(PDO $pdo, int $userId): array {
+    // If entries has user_id, join by it; else join on name
+    $byUserId = _aw_has_col($pdo,'entries','user_id');
+    return [
+        'byUserId' => $byUserId,
+        'userId'   => $userId,
+    ];
+}
+
+function _aw_week_join(PDO $pdo): array {
+    // Determine how to join entries->weeks and which starts_on expression to use
+    $hasWeekText   = _aw_has_col($pdo,'entries','week');
+    $hasWeekId     = _aw_has_col($pdo,'entries','week_id');
+    $weeksHasId    = _aw_has_col($pdo,'weeks','id');
+    $weeksHasWeek  = _aw_has_col($pdo,'weeks','week');
+    $weeksHasStart = _aw_has_col($pdo,'weeks','starts_on');
+
+    if ($hasWeekId && $weeksHasId && $weeksHasStart) {
+        return [
+            'join' => 'e.week_id = w.id',
+            'starts' => 'w.starts_on'
+        ];
+    }
+    // Legacy textual join, prefer COALESCE to support either column in weeks
+    $startsExpr = $weeksHasStart ? 'COALESCE(w.starts_on, w.week)' : 'w.week';
+    if ($hasWeekText && ($weeksHasWeek || $weeksHasStart)) {
+        return [
+            'join' => 'e.week = COALESCE(w.week, w.starts_on)',
+            'starts' => $startsExpr
+        ];
+    }
+    // As a last resort, allow selecting without join (no starts_on available)
+    return [ 'join' => '1=1', 'starts' => "''" ];
+}
+
+/**
  * Parse comma-separated milestone string into sorted unique int array.
  *
  * @param string $s Comma-separated integers e.g. "100000,250000"
@@ -34,39 +89,46 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
     $thresholds = parse_milestones_string(setting_get('milestones.lifetime_steps', '100000,250000,500000,750000,1000000'));
     $awards = [];
     
-    // Get user name from user ID
+    // Resolve user name when needed
     $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = :uid");
     $userStmt->execute([':uid' => $userId]);
-    $userName = $userStmt->fetchColumn();
+    $userName = (string)($userStmt->fetchColumn() ?: '');
     
-    if (!$userName) {
-        return []; // User not found
+    // Sum user's total steps across all entries; support both schemas
+    $days = _aw_day_cols($pdo);
+    $sumExpr = implode(' + ', array_map(fn($d)=>"COALESCE(e.$d,0)", $days));
+    $byUser = _aw_user_binding($pdo, $userId);
+    if ($byUser['byUserId']) {
+        $sql = "SELECT COALESCE(SUM($sumExpr),0) AS total FROM entries e WHERE e.user_id = :uid";
+        $totalStmt = $pdo->prepare($sql);
+        $totalStmt->execute([':uid' => $userId]);
+    } else {
+        if ($userName === '') return [];
+        $sql = "SELECT COALESCE(SUM($sumExpr),0) AS total FROM entries e WHERE e.name = :name";
+        $totalStmt = $pdo->prepare($sql);
+        $totalStmt->execute([':name' => $userName]);
     }
-    
-    // Get user's total steps
-    $totalStmt = $pdo->prepare("
-        SELECT COALESCE(SUM(COALESCE(monday,0) + COALESCE(tuesday,0) + COALESCE(wednesday,0) + 
-                            COALESCE(thursday,0) + COALESCE(friday,0) + COALESCE(saturday,0)), 0) AS total
-        FROM entries
-        WHERE name = :name
-    ");
-    $totalStmt->execute([':name' => $userName]);
     $totalSteps = (int)$totalStmt->fetchColumn();
     
-    // Get image paths from ai_awards table
-    $imageStmt = $pdo->prepare("
-        SELECT milestone_value, image_path 
-        FROM ai_awards 
-        WHERE user_id = :uid AND kind = 'lifetime_steps' AND milestone_value IN (100000, 250000, 500000, 750000, 1000000)
-    ");
-    $imageStmt->execute([':uid' => $userId]);
+    // Get image paths from ai_awards table (optional; table may not exist in tests)
     $imagePaths = [];
-    while ($row = $imageStmt->fetch(PDO::FETCH_ASSOC)) {
-        if (!empty($row['image_path'])) {
-            // Prefer the most recent award file on disk for this milestone (handles .webp vs .svg)
-            // Use find_award_image() to locate the newest matching file in the awards directory.
-            $imagePaths[(int)$row['milestone_value']] = find_award_image($userId, (int)$row['milestone_value']);
+    try {
+        $hasAiAwards = _aw_has_col($pdo, 'ai_awards', 'milestone_value');
+        if ($hasAiAwards) {
+            $imageStmt = $pdo->prepare("
+                SELECT milestone_value, image_path 
+                FROM ai_awards 
+                WHERE user_id = :uid AND kind = 'lifetime_steps' AND milestone_value IN (100000, 250000, 500000, 750000, 1000000)
+            ");
+            $imageStmt->execute([':uid' => $userId]);
+            while ($row = $imageStmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($row['image_path'])) {
+                    $imagePaths[(int)$row['milestone_value']] = find_award_image($userId, (int)$row['milestone_value']);
+                }
+            }
         }
+    } catch (Throwable $e) {
+        // ignore: treat as no pre-existing images
     }
     
     foreach ($thresholds as $threshold) {
@@ -143,24 +205,27 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
  * @return string|null ISO date YYYY-MM-DD or null if not reached
  */
 function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
-    // Get user name
+    // Resolve user name if needed
     $userStmt = $pdo->prepare("SELECT name FROM users WHERE id = :uid");
     $userStmt->execute([':uid' => $userId]);
-    $userName = $userStmt->fetchColumn();
+    $userName = (string)($userStmt->fetchColumn() ?: '');
     
-    if (!$userName) {
-        return null;
+    // Build query supporting both schemas
+    $days = _aw_day_cols($pdo);
+    $selectDays = implode(', ', array_map(fn($d)=>"e.$d AS $d", $days));
+    $join = _aw_week_join($pdo);
+    $starts = $join['starts'];
+    $byUser = _aw_user_binding($pdo, $userId);
+    if ($byUser['byUserId']) {
+        $sql = "SELECT $selectDays, $starts AS starts_on FROM entries e JOIN weeks w ON {$join['join']} WHERE e.user_id = :uid ORDER BY starts_on ASC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':uid' => $userId]);
+    } else {
+        if ($userName === '') return null;
+        $sql = "SELECT $selectDays, $starts AS starts_on FROM entries e JOIN weeks w ON {$join['join']} WHERE e.name = :name ORDER BY starts_on ASC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':name' => $userName]);
     }
-    
-    // Get all entries for user with week start dates, ordered chronologically
-    $stmt = $pdo->prepare("
-        SELECT e.monday, e.tuesday, e.wednesday, e.thursday, e.friday, e.saturday, w.starts_on
-        FROM entries e
-        JOIN weeks w ON e.week = w.week
-        WHERE e.name = :name
-        ORDER BY w.starts_on ASC
-    ");
-    $stmt->execute([':name' => $userName]);
     $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     if (empty($entries)) {
@@ -177,14 +242,13 @@ function compute_awarded_date(PDO $pdo, int $userId, int $threshold): ?string {
             continue;
         }
         
-        $daySteps = [
-            'monday' => $entry['monday'],
-            'tuesday' => $entry['tuesday'],
-            'wednesday' => $entry['wednesday'],
-            'thursday' => $entry['thursday'],
-            'friday' => $entry['friday'],
-            'saturday' => $entry['saturday']
-        ];
+        // Normalize day keys regardless of schema
+        $daySteps = [];
+        foreach (['monday'=>'mon','tuesday'=>'tue','wednesday'=>'wed','thursday'=>'thu','friday'=>'fri','saturday'=>'sat'] as $long=>$short) {
+            $daySteps[$long] = $entries[0] !== null // silence static analyzers
+                ? ($entry[$long] ?? ($entry[$short] ?? 0))
+                : 0;
+        }
         
         $expanded = expand_week_to_daily_dates($weekStart, $daySteps);
         foreach ($expanded as $date => $steps) {

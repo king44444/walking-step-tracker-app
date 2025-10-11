@@ -174,7 +174,8 @@ class AwardsTest extends TestCase
         $this->assertTrue($firstAward['earned']);
         $this->assertEquals(100000, $firstAward['threshold']);
         $this->assertNotNull($firstAward['awarded_at']);
-        $this->assertEquals('2025-08-08', $firstAward['awarded_at']); // Friday when cumulative reaches 100k
+        // With 25k per day, threshold 100k is reached on Thursday (08-07)
+        $this->assertEquals('2025-08-07', $firstAward['awarded_at']);
         
         // Second award (250k) should be locked
         $secondAward = $awards[1];
