@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Config\DB;
+use App\Security\TwilioSignature;
 use App\Services\Outbound;
 use App\Support\Tx;
 
@@ -39,8 +40,8 @@ class SmsController
         $auth = env('TWILIO_AUTH_TOKEN','');
         $is_twilio = isset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
         if (!$this->isInternalRequest() && $auth !== '') {
-            $url = (isset($_SERVER['HTTPS'])?'https':'http').'://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'];
-            $ok = $this->verifyTwilioSignature($auth, $url, $_POST, $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? null);
+            $url = TwilioSignature::buildTwilioUrl();
+            $ok = TwilioSignature::verify($_POST, $url, $auth);
             if (!$ok) {
                 $audit_exec([$createdAt,$e164,$body,null,null,null,null,'bad_signature']);
                 http_response_code(403);
@@ -145,7 +146,8 @@ class SmsController
         }
 
         $authToken = getenv('TWILIO_AUTH_TOKEN') ?: '';
-        if (!$this->verifyTwilioSignatureStatus($authToken)) {
+        $url = TwilioSignature::buildTwilioUrl();
+        if (!TwilioSignature::verify($_POST, $url, $authToken)) {
             http_response_code(403);
             exit;
         }
@@ -263,21 +265,7 @@ class SmsController
         return $is_local || $has_secret;
     }
 
-    private function verifyTwilioSignature(string $authToken, string $url, array $post, ?string $headerSig): bool
-    {
-        if (!$authToken) return true;
-        require_once dirname(__DIR__, 2) . '/api/lib/twilio.php';
-        return verify_twilio_signature($authToken, $url, $post, $headerSig);
-    }
 
-    private function verifyTwilioSignatureStatus(string $authToken): bool
-    {
-        if ($authToken === '') return true;
-        $hdr = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
-        require_once dirname(__DIR__, 2) . '/api/common_sig.php';
-        $info = twilio_verify($_POST, $hdr, $authToken);
-        return $info['match'];
-    }
 
     private function to_e164(string $phone): string
     {
