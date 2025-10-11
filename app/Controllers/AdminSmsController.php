@@ -178,11 +178,15 @@ final class AdminSmsController
         $userId = (int)($_GET['user_id'] ?? 0);
         if (!$userId) {
             http_response_code(400);
-            return json_encode(['error' => 'Missing user_id']);
+            $result = json_encode(['error' => 'Missing user_id']);
+            error_log('messages() returning error: ' . $result);
+            return $result;
         }
 
         // For now, return empty messages array
-        return json_encode(['messages' => []]);
+        $result = json_encode(['messages' => []]);
+        error_log('messages() returning success: ' . $result);
+        return $result;
     }
 
     public function startUser(): string
