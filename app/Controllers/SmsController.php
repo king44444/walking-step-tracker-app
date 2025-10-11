@@ -23,6 +23,7 @@ class SmsController
         $pdo = DB::pdo();
         $from = $_POST['From'] ?? '';
         $body = trim($_POST['Body'] ?? '');
+        $raw_body = $body; // keep original body for auditing
         $e164 = $this->to_e164($from);
         $now = now_in_tz();
         $createdAt = $now->format(\DateTime::ATOM);
@@ -65,7 +66,7 @@ class SmsController
         }
 
         if (!$e164 || $body==='') {
-            $audit_exec([$createdAt,$from,$body,null,null,null,null,'bad_request']);
+            $audit_exec([$createdAt,$from,$raw_body,null,null,null,null,'bad_request']);
             $errMsg = 'Sorry, we could not read your number or message. Please try again.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'bad_request', 400);
         }
@@ -94,7 +95,6 @@ class SmsController
         $name = $u['name'];
 
         // Parse input - check for commands first
-        $raw_body = $body;
         $body_upper = strtoupper($body);
 
         // Command handling
