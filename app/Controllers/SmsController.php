@@ -507,13 +507,31 @@ class SmsController
 
     private function handleRemindersWhen(\PDO $pdo, string $name, string $when): string
     {
-        $when = strtoupper(trim($when));
-        if (!in_array($when, ['MORNING', 'EVENING']) && !preg_match('/^\d{1,2}:\d{2}$/', $when)) {
-            return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+        require_once dirname(__DIR__, 2) . '/api/lib/settings.php';
+        $raw = trim($when);
+        $upVal = strtoupper($raw);
+        if (in_array($upVal, ['MORNING', 'EVENING'], true)) {
+            $val = $upVal === 'MORNING'
+                ? (string)setting_get('reminders.default_morning', '07:30')
+                : (string)setting_get('reminders.default_evening', '20:00');
+        } else {
+            if (!preg_match('/^\s*(\d{1,2}):(\d{2})\s*([AP]M)?\s*$/i', $raw, $m)) {
+                return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+            }
+            $h = (int)$m[1]; $min = (int)$m[2]; $ampm = isset($m[3]) ? strtoupper($m[3]) : '';
+            if ($min < 0 || $min > 59) return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+            if ($ampm === '') {
+                if ($h < 0 || $h > 23) return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+            } else {
+                if ($h < 1 || $h > 12) return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+                if ($ampm === 'AM') { if ($h === 12) $h = 0; }
+                if ($ampm === 'PM') { if ($h !== 12) $h += 12; }
+            }
+            $val = sprintf('%02d:%02d', $h, $min);
         }
         $stmt = $pdo->prepare("UPDATE users SET reminders_when = ? WHERE name = ?");
-        $stmt->execute([$when, $name]);
-        return "Reminder time set to " . $when . ".";
+        $stmt->execute([$val, $name]);
+        return "Reminder time set to " . $val . ".";
     }
 
     private function handleUndoCommand(\PDO $pdo, string $name): string

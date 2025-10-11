@@ -13,7 +13,7 @@ final class AdminUsersController
     {
         AdminAuth::require();
         $pdo = DB::pdo();
-        $users = $pdo->query("SELECT id,name,sex,age,tag,is_active,photo_path FROM users ORDER BY LOWER(name)")->fetchAll();
+        $users = $pdo->query("SELECT id,name,phone_e164,sex,age,tag,is_active,photo_path FROM users ORDER BY LOWER(name)")->fetchAll();
         if (session_status() !== PHP_SESSION_ACTIVE) session_start();
         $csrfToken = Csrf::token();
         ob_start();
@@ -57,10 +57,20 @@ final class AdminUsersController
             if ($name === '') throw new \Exception('name required');
 
             Tx::with(function($pdo) use ($u, $name) {
+                // Normalize phone to E.164 if provided
+                $phone = isset($u['phone_e164']) ? trim((string)$u['phone_e164']) : '';
+                if ($phone !== '') {
+                    require_once dirname(__DIR__, 2) . '/api/lib/phone.php';
+                    $norm = to_e164($phone);
+                    $phone = $norm ?: $phone; // fall back to raw if cannot normalize
+                } else {
+                    $phone = null;
+                }
                 if (!empty($u['id'])) {
-                    $stmt = $pdo->prepare("UPDATE users SET name=:name, sex=:sex, age=:age, tag=:tag, is_active=:active, photo_path=:photo WHERE id=:id");
+                    $stmt = $pdo->prepare("UPDATE users SET name=:name, phone_e164=:phone, sex=:sex, age=:age, tag=:tag, is_active=:active, photo_path=:photo WHERE id=:id");
                     $stmt->execute([
                         ':name'=>$name,
+                        ':phone'=>$phone,
                         ':sex'=>$u['sex'] ?? null,
                         ':age'=>strlen((string)($u['age'] ?? '')) ? $u['age'] : null,
                         ':tag'=>$u['tag'] ?? null,
@@ -69,9 +79,10 @@ final class AdminUsersController
                         ':id'=>$u['id']
                     ]);
                 } else {
-                    $ins = $pdo->prepare("INSERT INTO users(name,sex,age,tag,is_active,photo_path) VALUES(:name,:sex,:age,:tag,:active,:photo)");
+                    $ins = $pdo->prepare("INSERT INTO users(name,phone_e164,sex,age,tag,is_active,photo_path) VALUES(:name,:phone,:sex,:age,:tag,:active,:photo)");
                     $ins->execute([
                         ':name'=>$name,
+                        ':phone'=>$phone,
                         ':sex'=>$u['sex'] ?? null,
                         ':age'=>strlen((string)($u['age'] ?? '')) ? $u['age'] : null,
                         ':tag'=>$u['tag'] ?? null,

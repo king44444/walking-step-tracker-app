@@ -10,12 +10,13 @@
   </div>
 
 <table id="usersTable">
-  <thead><tr><th></th><th>Name</th><th>Active</th><th>Tag</th><th>Actions</th></tr></thead>
+  <thead><tr><th></th><th>Name</th><th>Phone</th><th>Active</th><th>Tag</th><th>Actions</th></tr></thead>
   <tbody>
     <?php foreach ($users as $u): ?>
       <tr data-id="<?= (int)$u['id'] ?>">
         <td><img src="/public/assets/images/users/<?= (int)$u['id'] ?>/selfie.jpg" style="width:32px;height:32px;border-radius:4px" onerror="this.style.display='none'"></td>
         <td class="name"><?= htmlspecialchars($u['name']) ?></td>
+        <td class="phone"><?= htmlspecialchars($u['phone_e164'] ?? '') ?></td>
         <td class="active"><?= (int)($u['is_active'] ?? 0) ? 'Yes' : 'No' ?></td>
         <td class="tag"><?= htmlspecialchars($u['tag'] ?? '') ?></td>
         <td>
@@ -32,6 +33,7 @@
   <form id="uForm">
     <input type="hidden" name="id" id="u_id">
     <label>Name: <input name="name" id="u_name" required></label><br>
+    <label>Phone (E.164): <input name="phone_e164" id="u_phone"></label><br>
     <label>Tag: <input name="tag" id="u_tag"></label><br>
     <label>Sex: <input name="sex" id="u_sex"></label><br>
     <label>Age: <input name="age" id="u_age" type="number" min="0"></label><br>
@@ -60,6 +62,7 @@ document.querySelectorAll('#usersTable .edit').forEach(btn=>{
     document.getElementById('formTitle').textContent = 'Edit user';
     document.getElementById('u_id').value = id;
     document.getElementById('u_name').value = tr.querySelector('.name').textContent.trim();
+    document.getElementById('u_phone').value = tr.querySelector('.phone').textContent.trim();
     document.getElementById('u_tag').value = tr.querySelector('.tag').textContent.trim();
     document.getElementById('u_active').checked = tr.querySelector('.active').textContent.trim() === 'Yes';
   });
@@ -83,6 +86,7 @@ document.getElementById('saveUser').addEventListener('click', async (e)=>{
   const payload = { user: {
     id: id ? parseInt(id,10) : null,
     name: document.getElementById('u_name').value,
+    phone_e164: document.getElementById('u_phone').value,
     tag: document.getElementById('u_tag').value,
     sex: document.getElementById('u_sex').value,
     age: document.getElementById('u_age').value,
