@@ -311,3 +311,100 @@
     font-size: 0.875rem;
   }
 }
+
+/* Milestones list layout and responsive styling */
+.milestones-list {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* Single-line row layout */
+.milestone-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  gap: 0.75rem;
+  min-height: 40px;
+}
+
+/* Remove last row border */
+.milestone-row:last-child {
+  border-bottom: none;
+}
+
+/* Left group: label + count */
+.milestone-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* Chip (label) — keep using Tailwind color classes but constrain sizing */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+/* Muted label color */
+.milestone-label {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+/* Count styling: slightly brighter accent */
+.milestone-count {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 1rem;
+  margin-left: 0.25rem;
+}
+
+/* Steps text: smaller, lighter opacity */
+.milestone-steps {
+  font-size: 0.9rem;
+  opacity: 0.75;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Prevent overflow and allow wrapping where needed */
+.milestones-list,
+.milestone-row,
+.milestone-left,
+.milestone-steps {
+  overflow-wrap: anywhere;
+}
+
+/* Responsive adjustments for narrow screens (<768px) */
+@media (max-width: 768px) {
+  .milestone-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 6px 10px;
+  }
+  .milestone-left {
+    width: 100%;
+    gap: 0.5rem;
+    margin-bottom: 4px;
+  }
+  .milestone-steps {
+    width: 100%;
+    text-align: left;
+    margin-top: 0;
+    opacity: 0.8;
+    font-size: 0.85rem;
+  }
+  .milestone-count {
+    font-size: 0.95rem;
+  }
+}

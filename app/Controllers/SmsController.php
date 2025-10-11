@@ -189,16 +189,8 @@ class SmsController
         });
         $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
 
-        // AI reply processing (best-effort - don't let failures block confirmation)
-        $aiOn = setting_get('ai.enabled', '1');
-        if ($aiOn === '1') {
-            try {
-                $this->handleAiReply($pdo, $name, $raw_body, $week, $e164);
-            } catch (\Throwable $e) {
-                error_log('SmsController::inbound AI error: ' . $e->getMessage());
-                // Continue with confirmation SMS even if AI fails
-            }
-        }
+        // AI reply processing removed - replaced with opt-in reminder system
+        // (AI system still available for other uses but not triggered after step writes)
 
         // Lifetime award check (best-effort)
         try {

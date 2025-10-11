@@ -1,16 +1,6 @@
-<?php
-/** @var array $users */
-/** @var string $csrfToken */
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin SMS Console</title>
-    <link rel="stylesheet" href="../public/assets/css/app.css">
+<?php /** @var array $users */ /** @var string $csrfToken */ ?>
+<?php ob_start(); ?>
     <style>
-        .sms-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         .user-selector { margin-bottom: 20px; }
         .messages-panel { border: 1px solid #ddd; height: 400px; overflow-y: auto; padding: 10px; margin-bottom: 20px; }
         .message { margin-bottom: 10px; padding: 8px; border-radius: 4px; }
@@ -29,10 +19,8 @@
         .stop-notice { color: #f44336; font-weight: bold; margin-bottom: 10px; }
         .start-btn { background: #4caf50; color: white; border: none; padding: 5px 10px; cursor: pointer; }
     </style>
-</head>
-<body>
-    <div class="sms-container">
-        <h1>Admin SMS Console</h1>
+
+    <h1 class="admin-title">Admin SMS Console</h1>
 
         <div class="user-selector">
             <label for="user-select">Select User:</label>
@@ -68,8 +56,6 @@
                 <button type="submit">Send SMS</button>
             </form>
         </div>
-    </div>
-
     <script>
         let currentUserId = null;
         let uploadedFiles = [];
@@ -86,7 +72,7 @@
         });
 
         function loadMessages() {
-            fetch(`sms.php?action=messages&user_id=${currentUserId}`)
+            fetch(`/admin/sms/messages?user_id=${currentUserId}`)
                 .then(response => response.json())
                 .then(data => {
                     const panel = document.getElementById('messages-panel');
@@ -154,7 +140,7 @@
                 formData.append('files[]', file);
             }
 
-            fetch('sms.php?action=upload', {
+            fetch('/admin/sms/upload', {
                 method: 'POST',
                 body: formData
             })
@@ -210,7 +196,7 @@
             const formData = new FormData(this);
             formData.append('attachments', JSON.stringify(uploadedFiles.map(f => f.id)));
 
-            fetch('sms.php?action=send', {
+            fetch('/admin/sms/send', {
                 method: 'POST',
                 body: formData
             })
@@ -235,7 +221,7 @@
             formData.append('csrf', '<?= htmlspecialchars($csrfToken) ?>');
             formData.append('user_id', currentUserId);
 
-            fetch('sms.php?action=start-user', {
+            fetch('/admin/sms/start-user', {
                 method: 'POST',
                 body: formData
             })
@@ -250,5 +236,5 @@
             });
         }
     </script>
-</body>
-</html>
+<?php $content = ob_get_clean(); $title = 'Admin · SMS'; $extraHead = '';
+require __DIR__ . '/_layout.php'; ?>

@@ -1,9 +1,13 @@
 <?php /** @var array $users */ /** @var string $csrfToken */ ?>
-<h1>KW Admin: Users</h1>
+<?php ob_start(); ?>
+<h1 class="admin-title">KW Admin: Users</h1>
 <input type="hidden" id="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
 <div>
   <button id="newUserBtn" class="btn">New user</button>
-</div>
+  <a class="btn" href="/admin/entries" style="margin-left:8px;">Go to Entries</a>
+  <a class="btn" href="/admin/sms" style="margin-left:8px;">Go to SMS</a>
+  <a class="btn" href="/admin/ai" style="margin-left:8px;">Go to AI</a>
+  </div>
 
 <table id="usersTable">
   <thead><tr><th></th><th>Name</th><th>Active</th><th>Tag</th><th>Actions</th></tr></thead>
@@ -90,4 +94,6 @@ document.getElementById('saveUser').addEventListener('click', async (e)=>{
   if (j.error) return alert('Save failed: ' + j.error);
   location.reload();
 });
+<?php $content = ob_get_clean(); $title = 'Admin · Users'; $extraHead = '';
+require __DIR__ . '/_layout.php'; ?>
 </script>

@@ -1,5 +1,6 @@
 <?php /** @var array $weeks */ /** @var array $entries */ /** @var array $users */ /** @var string $csrfToken */ /** @var string $curWeek */ ?>
-<h1>KW Admin: Entries</h1>
+<?php ob_start(); ?>
+<h1 class="admin-title">KW Admin: Entries</h1>
 <input type="hidden" id="csrf" value="<?= htmlspecialchars($csrfToken) ?>">
 <section>
   <label>Week:</label>
@@ -162,3 +163,5 @@ function onWeekChange(){
   }
 })();
 </script>
+<?php $content = ob_get_clean(); $title = 'Admin · Entries'; $extraHead = '';
+require __DIR__ . '/_layout.php'; ?>

@@ -39,6 +39,40 @@ function settings_seed_defaults(PDO $pdo): void {
     'sms.admin_password' => '',
     'sms.undo_enabled' => '0',
     'app.public_base_url' => '',
+    'ai.image.prompts.regular' => json_encode([
+      [
+        'name' => 'Classic Badge',
+        'text' => 'Create a flat, minimalist badge icon for {userName} achieving {awardLabel} ({milestone}). Use a dark blue background, crisp edges, and readable text. No faces. Square 512x512.',
+        'enabled' => true
+      ],
+      [
+        'name' => 'Modern Medal',
+        'text' => 'Design a contemporary medal-style award for {userName} reaching {awardLabel} ({milestone}). Clean geometric design with metallic accents. Square 512x512.',
+        'enabled' => true
+      ],
+      [
+        'name' => 'Achievement Ribbon',
+        'text' => 'Create an elegant ribbon award design celebrating {userName}\'s {awardLabel} milestone ({milestone}). Flowing ribbon style with achievement symbolism. Square 512x512.',
+        'enabled' => true
+      ]
+    ]),
+    'ai.image.prompts.lifetime' => json_encode([
+      [
+        'name' => 'Epic Achievement',
+        'text' => "Design a breathtaking digital award image celebrating a lifetime walking achievement. {userName} has reached {milestone} lifetime steps ({awardLabel}). Create a highly detailed, imaginative emblem that visually represents their personality and interest: {interestText}. Use luminous color, depth, and storytelling elements. Capture the feeling of epic accomplishment, motion, and personal triumph. Composition: centered emblem, cinematic lighting, subtle text 'Lifetime {milestone} Steps'. No faces or photo realism. Square 1024x1024 ratio. Style: digital painting + vector hybrid, vivid and collectible. Style hint: {styleHint}.",
+        'enabled' => true
+      ],
+      [
+        'name' => 'Mythic Journey',
+        'text' => "Create a legendary award illustration for {userName}'s lifetime milestone of {milestone} steps ({awardLabel}). Incorporate their interest in {interestText} into a mythic design with heroic symbolism. Epic scale, dramatic lighting, and profound achievement themes. Square 1024x1024. Style hint: {styleHint}.",
+        'enabled' => true
+      ],
+      [
+        'name' => 'Personal Triumph',
+        'text' => "Illustrate {userName}'s personal triumph with {milestone} lifetime steps ({awardLabel}). Design around their interest in {interestText} with intimate, meaningful symbolism. Warm colors, personal scale, and authentic achievement feeling. Square 1024x1024. Style hint: {styleHint}.",
+        'enabled' => true
+      ]
+    ]),
   ];
   foreach ($defaults as $k => $v) {
     $st = $pdo->prepare("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(:k,:v,datetime('now'))");

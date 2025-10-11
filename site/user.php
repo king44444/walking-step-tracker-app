@@ -203,34 +203,23 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
       <div class="card p-4">
         <div class="kicker">Milestones</div>
         <h3 class="text-xl font-bold">Daily Milestone Counts</h3>
-        <div class="mt-3 flex flex-wrap gap-2 items-start">
+        <div class="mt-3">
           <?php if (empty($milestones)): ?>
-            <div style="grid-column: 1 / -1; color: rgba(230,236,255,0.6);">No daily milestones configured.</div>
+            <div style="color: rgba(230,236,255,0.6);">No daily milestones configured.</div>
           <?php else: ?>
-            <div class="flex-1 flex flex-wrap gap-2">
+            <div class="milestones-list rounded-md overflow-hidden">
               <?php foreach ($milestones as $m):
                 $steps = (int)$m['steps'];
                 $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
                 $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
                 $cls = badge_class_for_steps($steps);
               ?>
-                <div class="flex items-center gap-2">
-                  <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?>"><?= $label ?></span>
-                  <div class="text-sm font-semibold"><?= $count ?></div>
-                </div>
-              <?php endforeach; ?>
-            </div>
-
-            <div class="w-full md:w-56 mt-6 md:mt-4 text-sm text-white/60">
-              <div class="font-semibold text-white/80 mb-2">Legend</div>
-              <?php foreach ($milestones as $m):
-                $steps = (int)$m['steps'];
-                $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
-                $cls = badge_class_for_steps($steps);
-              ?>
-                <div class="flex items-center gap-3 mb-2">
-                  <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?>"><?= $label ?></span>
-                  <div class="text-white/60"><?= number_format($steps) ?> steps</div>
+                <div class="milestone-row flex items-center justify-between px-2 py-1 md:px-4">
+                  <div class="milestone-left flex items-center gap-3">
+                    <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?> milestone-label"><?= $label ?></span>
+                    <div class="milestone-count font-semibold"><?= $count ?></div>
+                  </div>
+                  <div class="milestone-steps text-sm text-white/50"><?= number_format($steps) ?> steps</div>
                 </div>
               <?php endforeach; ?>
             </div>

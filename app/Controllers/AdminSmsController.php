@@ -172,23 +172,89 @@ final class AdminSmsController
 
     public function messages(): string
     {
-        // Temporarily remove auth for debugging
-        // AdminAuth::require();
+        AdminAuth::require();
 
         header('Content-Type: application/json');
 
         $userId = (int)($_GET['user_id'] ?? 0);
         if (!$userId) {
             http_response_code(400);
-            $result = json_encode(['error' => 'Missing user_id']);
-            error_log('messages() returning error: ' . $result);
-            return $result;
+            return json_encode(['error' => 'Missing user_id']);
         }
 
-        // For now, return empty messages array
-        $result = json_encode(['messages' => []]);
-        error_log('messages() returning success: ' . $result);
-        return $result;
+        $pdo = DB::pdo();
+
+        // Get user phone for filtering
+        $stmt = $pdo->prepare("SELECT phone_e164 FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $phone = $stmt->fetchColumn();
+
+        if (!$phone) {
+            return json_encode(['messages' => []]);
+        }
+
+        $messages = [];
+
+        // Get inbound messages (sms_audit)
+        $stmt = $pdo->prepare("
+            SELECT
+                'inbound' as direction,
+                created_at as timestamp,
+                raw_body as body,
+                status,
+                NULL as delivery_status,
+                meta
+            FROM sms_audit
+            WHERE from_number = ?
+            ORDER BY created_at DESC
+            LIMIT 50
+        ");
+        $stmt->execute([$phone]);
+        $inbound = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // Get outbound messages (sms_outbound_audit)
+        $stmt = $pdo->prepare("
+            SELECT
+                'outbound' as direction,
+                created_at as timestamp,
+                body,
+                CASE WHEN sid IS NOT NULL THEN 'sent' ELSE 'failed' END as status,
+                CASE
+                    WHEN sid IS NOT NULL THEN 'delivered'
+                    ELSE 'failed'
+                END as delivery_status,
+                meta
+            FROM sms_outbound_audit
+            WHERE to_number = ?
+            ORDER BY created_at DESC
+            LIMIT 50
+        ");
+        $stmt->execute([$phone]);
+        $outbound = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        // Combine and sort by timestamp (newest first)
+        $allMessages = array_merge($inbound, $outbound);
+        usort($allMessages, function($a, $b) {
+            return strtotime($b['timestamp']) <=> strtotime($a['timestamp']);
+        });
+
+        // Take only the most recent 50
+        $allMessages = array_slice($allMessages, 0, 50);
+
+        // Format messages and parse attachments
+        foreach ($allMessages as $msg) {
+            $formatted = [
+                'direction' => $msg['direction'],
+                'timestamp' => $msg['timestamp'],
+                'body' => $msg['body'] ?? '',
+                'status' => $msg['status'],
+                'delivery_status' => $msg['delivery_status'],
+                'attachments' => $this->parseAttachments($msg['meta'])
+            ];
+            $messages[] = $formatted;
+        }
+
+        return json_encode(['messages' => $messages]);
     }
 
     public function startUser(): string

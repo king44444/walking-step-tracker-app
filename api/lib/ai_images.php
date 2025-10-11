@@ -302,6 +302,30 @@ function ai_image_slug(string $s): string {
 }
 
 function build_award_prompt(string $userName, string $awardLabel, int $milestone, string $style): string {
+  $promptsJson = setting_get('ai.image.prompts.regular', '');
+  if ($promptsJson) {
+    try {
+      $prompts = json_decode($promptsJson, true);
+      if (is_array($prompts)) {
+        $enabledPrompts = array_filter($prompts, fn($p) => ($p['enabled'] ?? true));
+        if (!empty($enabledPrompts)) {
+          $selectedPrompt = $enabledPrompts[array_rand($enabledPrompts)];
+          $text = $selectedPrompt['text'] ?? '';
+          if ($text) {
+            // Replace placeholders
+            $text = str_replace('{userName}', $userName, $text);
+            $text = str_replace('{awardLabel}', $awardLabel, $text);
+            $text = str_replace('{milestone}', number_format($milestone), $text);
+            return $text;
+          }
+        }
+      }
+    } catch (Throwable $e) {
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback to original hardcoded prompt
   $style = in_array($style, ['badge','medal','ribbon'], true) ? $style : 'badge';
   return sprintf(
     'Create a flat, minimalist %s icon for %s achieving %s (%s). Use a dark blue background, crisp edges, and readable text. No faces. Square 512x512.',
@@ -319,7 +343,7 @@ function build_award_prompt(string $userName, string $awardLabel, int $milestone
 function build_lifetime_award_prompt(array $user, string $awardLabel, int $milestone): string {
   $userName = (string)($user['name'] ?? 'Walker');
   $interests = trim((string)($user['interests'] ?? ''));
-  
+
   // Parse interests and randomly select one
   if ($interests !== '') {
     $interestList = array_map('trim', explode(',', $interests));
@@ -332,22 +356,48 @@ function build_lifetime_award_prompt(array $user, string $awardLabel, int $miles
   } else {
     $interestText = 'modern geometric design with symbols of perseverance';
   }
-  
+
   // Milestone-specific style hints
   $styleHint = match(true) {
     $milestone >= 500000 => 'cosmic energy, nebula background, mythic feel',
     $milestone >= 200000 => 'platinum glow, aurora sky, elegant symmetry',
     default => 'gold medal motif, radiant gradients, joyful sparks'
   };
-  
+
+  $promptsJson = setting_get('ai.image.prompts.lifetime', '');
+  if ($promptsJson) {
+    try {
+      $prompts = json_decode($promptsJson, true);
+      if (is_array($prompts)) {
+        $enabledPrompts = array_filter($prompts, fn($p) => ($p['enabled'] ?? true));
+        if (!empty($enabledPrompts)) {
+          $selectedPrompt = $enabledPrompts[array_rand($enabledPrompts)];
+          $text = $selectedPrompt['text'] ?? '';
+          if ($text) {
+            // Replace placeholders
+            $text = str_replace('{userName}', $userName, $text);
+            $text = str_replace('{milestone}', number_format($milestone), $text);
+            $text = str_replace('{awardLabel}', $awardLabel, $text);
+            $text = str_replace('{interestText}', $interestText, $text);
+            $text = str_replace('{styleHint}', $styleHint, $text);
+            return $text;
+          }
+        }
+      }
+    } catch (Throwable $e) {
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback to original hardcoded prompt
   return sprintf(
-    "Design a breathtaking digital award image celebrating a lifetime walking achievement. 
-     %s has reached %s lifetime steps (%s). 
-     Create a highly detailed, imaginative emblem that visually represents their personality and interest: %s. 
-     Use luminous color, depth, and storytelling elements. 
-     Capture the feeling of epic accomplishment, motion, and personal triumph. 
-     Composition: centered emblem, cinematic lighting, subtle text 'Lifetime %s Steps'. 
-     No faces or photo realism. Square 1024x1024 ratio. 
+    "Design a breathtaking digital award image celebrating a lifetime walking achievement.
+     %s has reached %s lifetime steps (%s).
+     Create a highly detailed, imaginative emblem that visually represents their personality and interest: %s.
+     Use luminous color, depth, and storytelling elements.
+     Capture the feeling of epic accomplishment, motion, and personal triumph.
+     Composition: centered emblem, cinematic lighting, subtle text 'Lifetime %s Steps'.
+     No faces or photo realism. Square 1024x1024 ratio.
      Style: digital painting + vector hybrid, vivid and collectible. Style hint: %s.",
     $userName,
     number_format($milestone),

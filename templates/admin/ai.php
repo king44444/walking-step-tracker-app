@@ -1,7 +1,6 @@
-<?php
-$csrf = \App\Security\Csrf::token();
-?>
-<!doctype html><meta charset="utf-8"><title>AI Admin</title>
+<?php $csrf = \App\Security\Csrf::token(); ?>
+<?php ob_start(); ?>
+<h1 class="admin-title">AI Admin</h1>
 <div>
   <button id="refresh">Refresh</button>
   <input id="week" placeholder="YYYY-W##">
@@ -166,3 +165,5 @@ document.getElementById('send').onclick = async () => {
 
 load();
 </script>
+<?php $content = ob_get_clean(); $title = 'Admin · AI'; $extraHead = '';
+require __DIR__ . '/_layout.php'; ?>
