@@ -89,6 +89,31 @@ ssh "${PI_USER}@${PI_HOST}" "bash -lc '
   fi
 '"
 
+echo "Run database migrations on server..."
+ssh "${PI_USER}@${PI_HOST}" "bash -lc '
+  cd \"${REMOTE_ROOT}\" && php api/migrate.php >/dev/null 2>&1 || true
+'"
+
+echo "Ensure Nginx routes /dev/html/walk/api/* to public/index.php..."
+ssh "${PI_USER}@${PI_HOST}" "sudo bash -lc '
+  set -e
+  SNIP=/etc/nginx/conf.d/walk_api_routes.conf
+  mkdir -p /etc/nginx/conf.d
+  cat > \"$SNIP\" <<CONF
+location ^~ /dev/html/walk/api/ {
+    try_files \$uri /dev/html/walk/public/index.php;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME /var/www/public_html/dev/html/walk/public/index.php;
+    fastcgi_param QUERY_STRING \$query_string;
+    fastcgi_param REQUEST_METHOD \$request_method;
+    fastcgi_param CONTENT_TYPE \$content_type;
+    fastcgi_param CONTENT_LENGTH \$content_length;
+    fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+}
+CONF
+  nginx -t && systemctl reload nginx
+'"
+
 echo "Restart php-fpm..."
 ssh "${PI_USER}@${PI_HOST}" "sudo systemctl restart php8.2-fpm"
 
