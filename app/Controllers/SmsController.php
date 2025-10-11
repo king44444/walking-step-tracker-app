@@ -95,10 +95,15 @@ class SmsController
         $name = $u['name'];
 
         // Parse input - check for commands first
+        $body = trim($body);
         $body_upper = strtoupper($body);
 
         // Command handling
         if ($body_upper === 'HELP') {
+            // Let Twilio handle HELP auto-reply; do not send our menu here
+            http_response_code(200);
+            return;
+        } elseif ($body_upper === 'INFO' || $body_upper === 'WALK') {
             $msg = $this->getHelpText($ctx['is_admin']);
             \App\Http\Responders\SmsResponder::ok($msg);
             return;

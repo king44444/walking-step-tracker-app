@@ -33,7 +33,7 @@ class SmsResponderTest extends TestCase
 
         $output = ob_get_clean();
         $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $output);
-        $this->assertStringContainsString('<Response><Message>Test message</Message></Response>', $output);
+        $this->assertStringContainsString('<Response><Message>Test message', $output);
     }
 
     public function testOkResponseWithoutTwilioHeaderReturnsJson()
@@ -44,7 +44,8 @@ class SmsResponderTest extends TestCase
 
         $output = ob_get_clean();
         $json = json_decode($output, true);
-        $this->assertEquals(['ok' => true, 'message' => 'Test message'], $json);
+        $this->assertTrue($json['ok']);
+        $this->assertStringStartsWith('Test message', $json['message']);
     }
 
     public function testErrorResponseWithTwilioHeaderReturnsXml()
@@ -55,7 +56,7 @@ class SmsResponderTest extends TestCase
 
         $output = ob_get_clean();
         $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $output);
-        $this->assertStringContainsString('<Response><Message>Error message</Message></Response>', $output);
+        $this->assertStringContainsString('<Response><Message>Error message', $output);
     }
 
     public function testErrorResponseWithoutTwilioHeaderReturnsJson()
@@ -66,7 +67,8 @@ class SmsResponderTest extends TestCase
 
         $output = ob_get_clean();
         $json = json_decode($output, true);
-        $this->assertEquals(['error' => 'test_error', 'message' => 'Error message'], $json);
+        $this->assertEquals('test_error', $json['error']);
+        $this->assertStringStartsWith('Error message', $json['message']);
     }
 
     public function testExplicitFormatQueryParamOverridesHeader()
@@ -78,7 +80,8 @@ class SmsResponderTest extends TestCase
 
         $output = ob_get_clean();
         $json = json_decode($output, true);
-        $this->assertEquals(['ok' => true, 'message' => 'Test message'], $json);
+        $this->assertTrue($json['ok']);
+        $this->assertStringStartsWith('Test message', $json['message']);
     }
 
     public function testInvalidFormatQueryParamDefaultsToHeader()

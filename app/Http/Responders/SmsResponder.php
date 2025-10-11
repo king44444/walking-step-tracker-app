@@ -43,6 +43,7 @@ class SmsResponder
      */
     private static function sendResponse(string $message, string $errorType, int $httpCode, string $format): void
     {
+        $message = self::withReminder($message);
         if ($format === 'xml') {
             self::sendXmlResponse($message, $httpCode);
         } else {
@@ -92,5 +93,41 @@ class SmsResponder
                 'message' => $message
             ]);
         }
+    }
+
+    /**
+     * Append site reminder unless already present.
+     * - SITE_URL from env; else DB/settings via api/lib/config.php (get_setting('site.url') or app.public_base_url)
+     * - Avoid duplicates if URL already present
+     */
+    private static function withReminder(string $message): string
+    {
+        $site = self::siteUrl();
+        if ($site === '') return $message;
+
+        // If message already contains the site URL (case-insensitive), do not append
+        if (stripos($message, $site) !== false) return $message;
+
+        $reminder = " Visit {$site} — text \"info\" or \"walk\" for menu.";
+        // Ensure we don't add if message already ends with the same reminder
+        if (substr($message, -strlen($reminder)) === $reminder) return $message;
+        return rtrim($message) . $reminder;
+    }
+
+    private static function siteUrl(): string
+    {
+        static $cached = null; if ($cached !== null) return $cached;
+        // Load lightweight config helpers
+        require_once __DIR__ . '/../../../api/lib/config.php';
+        $url = (string)env('SITE_URL', '');
+        if ($url === '' && function_exists('get_setting')) {
+            $url = (string)(get_setting('site.url') ?? '');
+        }
+        if ($url === '' && function_exists('setting_get')) {
+            // Optional fallback if settings helper is loaded elsewhere
+            try { $url = (string)setting_get('app.public_base_url', '') ?? ''; } catch (\Throwable $e) {}
+        }
+        $cached = $url;
+        return $cached;
     }
 }
