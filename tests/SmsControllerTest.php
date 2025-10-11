@@ -340,9 +340,10 @@ class SmsControllerTest extends TestCase
         $m = $rc->getMethod('handleRemindersWhen');
         $m->setAccessible(true);
         $ctrl = new \App\Controllers\SmsController();
+        // Default morning mapped to configured default (07:30)
         $msg = $m->invoke($ctrl, $pdo, 'Cara', 'MORNING');
-        $this->assertStringContainsString('Reminder time set to MORNING.', $msg);
-        $this->assertEquals('MORNING', $pdo->query("SELECT reminders_when FROM users WHERE name='Cara'")->fetchColumn());
+        $this->assertStringContainsString('Reminder time set to 07:30.', $msg);
+        $this->assertEquals('07:30', $pdo->query("SELECT reminders_when FROM users WHERE name='Cara'")->fetchColumn());
     }
 
     public function testReminderWhen0730()

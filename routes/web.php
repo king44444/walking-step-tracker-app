@@ -5,6 +5,15 @@ use App\Controllers\SmsController;
 
 /** @var Router $router */
 $router->add('GET', '/', fn() => 'OK');
+$router->add('GET', '/api/debug', function() {
+    header('Content-Type: application/json; charset=utf-8');
+    return json_encode([
+        'method' => $_SERVER['REQUEST_METHOD'] ?? '',
+        'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+        'path_raw' => parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH),
+        'path_norm' => $_SERVER['X_ROUTER_PATH'] ?? '',
+    ]);
+});
 // Debug route has been removed per request
 $router->add('GET', '/admin/ai', [new AdminController(), 'ai']); // kept for compatibility
 

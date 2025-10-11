@@ -108,7 +108,11 @@ class SmsResponder
         // If message already contains the site URL (case-insensitive), do not append
         if (stripos($message, $site) !== false) return $message;
 
-        $reminder = " Visit {$site} — text \"info\" or \"walk\" for menu.";
+        // If message already contains the standard hint, avoid duplicate hint
+        $hintPhrase = 'text "info" or "walk" for menu';
+        $hasHint = stripos($message, $hintPhrase) !== false;
+
+        $reminder = $hasHint ? " Visit {$site}." : " Visit {$site} — text \"info\" or \"walk\" for menu.";
         // Ensure we don't add if message already ends with the same reminder
         if (substr($message, -strlen($reminder)) === $reminder) return $message;
         return rtrim($message) . $reminder;
@@ -116,10 +120,14 @@ class SmsResponder
 
     private static function siteUrl(): string
     {
-        static $cached = null; if ($cached !== null) return $cached;
+        static $cached = null;
         // Load lightweight config helpers
         require_once __DIR__ . '/../../../api/lib/config.php';
-        $url = (string)env('SITE_URL', '');
+        // Always honor explicit env if present (and refresh cache)
+        $envUrl = (string)env('SITE_URL', '');
+        if ($envUrl !== '') { $cached = $envUrl; return $cached; }
+        if ($cached !== null) return $cached;
+        $url = '';
         if ($url === '' && function_exists('get_setting')) {
             $url = (string)(get_setting('site.url') ?? '');
         }

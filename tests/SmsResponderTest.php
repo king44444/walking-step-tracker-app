@@ -105,4 +105,39 @@ class SmsResponderTest extends TestCase
         // Expect properly escaped XML content
         $this->assertStringContainsString('Message with &lt;tags&gt; &amp; &quot;quotes&quot;', $output);
     }
+
+    public function testFooterAppendedForPlainNumber()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        $_ENV['SITE_URL'] = 'https://example.com/walk';
+
+        SmsResponder::ok('Recorded 1,240 for Mike on today.');
+        $output = ob_get_clean();
+        $this->assertStringContainsString('Recorded 1,240 for Mike on today.', $output);
+        $this->assertStringContainsString('Visit https://example.com/walk', $output);
+        $this->assertStringContainsString('text &quot;info&quot; or &quot;walk&quot; for menu', $output);
+    }
+
+    public function testFooterAppendedForDayNumber()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        $_ENV['SITE_URL'] = 'https://example.com/walk';
+
+        SmsResponder::ok('Recorded 1,240 for Mike on tuesday.');
+        $output = ob_get_clean();
+        $this->assertStringContainsString('Recorded 1,240 for Mike on tuesday.', $output);
+        $this->assertStringContainsString('Visit https://example.com/walk', $output);
+    }
+
+    public function testNoDuplicateWhenUrlAlreadyPresent()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        $_ENV['SITE_URL'] = 'https://example.com/walk';
+
+        $msg = 'Recorded 1,240 for Mike on today. Visit https://example.com/walk — text "info" or "walk" for menu.';
+        SmsResponder::ok($msg);
+        $output = ob_get_clean();
+        // The message should not contain the URL twice
+        $this->assertEquals(1, substr_count($output, 'https://example.com/walk'));
+    }
 }
