@@ -56,8 +56,9 @@ class SmsController
             $this->respondError($errMsg, 'bad_request', 400);
         }
 
-        // Rate limit 60s per number on last ok
-        $cut = (clone $now)->modify('-60 seconds')->format(\DateTime::ATOM);
+        // Rate limit per number on last ok (configurable window)
+        $rateWindowSec = (int)setting_get('sms.inbound_rate_window_sec', 60);
+        $cut = (clone $now)->modify("-{$rateWindowSec} seconds")->format(\DateTime::ATOM);
         $stRL = $pdo->prepare("SELECT 1 FROM sms_audit WHERE from_number=? AND status='ok' AND created_at>=? LIMIT 1");
         $stRL->execute([$e164, $cut]);
         if ($stRL->fetchColumn()) {
@@ -308,7 +309,8 @@ class SmsController
             $can = true;
             if ($lastAt !== '') {
                 $diff = time() - strtotime($lastAt);
-                if ($diff < 120) $can = false;
+                $aiRateWindowSec = (int)setting_get('sms.ai_rate_window_sec', 120);
+                if ($diff < $aiRateWindowSec) $can = false;
             }
             if ($can) {
                 $gen = generate_ai_sms_reply($name, $raw_body, ['week_label' => '']);

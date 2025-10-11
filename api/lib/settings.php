@@ -33,6 +33,8 @@ function settings_seed_defaults(PDO $pdo): void {
     'ai.recap.enabled' => '1',
     'ai.award.enabled' => '1',
     'ai.image.provider' => 'openrouter',
+    'sms.inbound_rate_window_sec' => '60',
+    'sms.ai_rate_window_sec' => '120',
   ];
   foreach ($defaults as $k => $v) {
     $st = $pdo->prepare("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(:k,:v,datetime('now'))");
