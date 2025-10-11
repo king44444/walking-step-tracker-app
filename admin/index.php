@@ -85,6 +85,7 @@ try {
       <a class="btn" href="entries.php">Entries</a>
       <a class="btn" href="users.php">Users</a>
       <a class="btn" href="ai.php">AI</a>
+      <a class="btn" href="sms.php">SMS</a>
       <a class="btn" href="awards.php">Awards</a>
       <a class="btn" href="awards_settings.php">Awards Settings</a>
       <a class="btn" href="phones.php">Phones</a>
