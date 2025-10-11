@@ -297,6 +297,81 @@ class SmsControllerTest extends TestCase
         $this->assertEquals('20:00', $this->pdo->query("SELECT value FROM settings WHERE key='reminders.default_evening'")->fetchColumn());
     }
 
+    public function testReminderToggleOn()
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("CREATE TABLE users(name TEXT, reminders_enabled INTEGER, reminders_when TEXT)");
+        $pdo->exec("INSERT INTO users(name, reminders_enabled) VALUES('Alice', 0)");
+
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('handleRemindersToggle');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $msg = $m->invoke($ctrl, $pdo, 'Alice', 'ON');
+        $this->assertStringStartsWith('reminders on.', strtolower($msg));
+        $this->assertEquals(1, (int)$pdo->query("SELECT reminders_enabled FROM users WHERE name='Alice'")->fetchColumn());
+    }
+
+    public function testReminderToggleOff()
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("CREATE TABLE users(name TEXT, reminders_enabled INTEGER, reminders_when TEXT)");
+        $pdo->exec("INSERT INTO users(name, reminders_enabled) VALUES('Bob', 1)");
+
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('handleRemindersToggle');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $msg = $m->invoke($ctrl, $pdo, 'Bob', 'OFF');
+        $this->assertStringStartsWith('reminders off.', strtolower($msg));
+        $this->assertEquals(0, (int)$pdo->query("SELECT reminders_enabled FROM users WHERE name='Bob'")->fetchColumn());
+    }
+
+    public function testReminderWhenMorning()
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("CREATE TABLE users(name TEXT, reminders_enabled INTEGER, reminders_when TEXT)");
+        $pdo->exec("INSERT INTO users(name, reminders_when) VALUES('Cara', NULL)");
+
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('handleRemindersWhen');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $msg = $m->invoke($ctrl, $pdo, 'Cara', 'MORNING');
+        $this->assertStringContainsString('Reminder time set to MORNING.', $msg);
+        $this->assertEquals('MORNING', $pdo->query("SELECT reminders_when FROM users WHERE name='Cara'")->fetchColumn());
+    }
+
+    public function testReminderWhen0730()
+    {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("CREATE TABLE users(name TEXT, reminders_enabled INTEGER, reminders_when TEXT)");
+        $pdo->exec("INSERT INTO users(name, reminders_when) VALUES('Dan', NULL)");
+
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('handleRemindersWhen');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $msg = $m->invoke($ctrl, $pdo, 'Dan', '07:30');
+        $this->assertStringContainsString('Reminder time set to 07:30.', $msg);
+        $this->assertEquals('07:30', $pdo->query("SELECT reminders_when FROM users WHERE name='Dan'")->fetchColumn());
+    }
+
+    public function testHelpTextMentionsWalkOrInfo()
+    {
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('getHelpText');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $msg = $m->invoke($ctrl, false);
+        $this->assertStringContainsString('WALK or INFO - Command list', $msg);
+        $this->assertStringNotContainsString('HELP - This message', $msg);
+    }
+
     public function testRemindersLogTable()
     {
         // Insert test reminder log

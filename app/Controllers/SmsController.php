@@ -427,7 +427,7 @@ class SmsController
             "INTERESTS LIST - Show interests",
             "REMINDERS ON|OFF - Toggle reminders",
             "REMINDERS WHEN MORNING|EVENING|HH:MM - Set time",
-            "HELP - This message"
+            "WALK or INFO - Command list"
         ];
         if ($isAdmin) {
             $lines[] = "UNDO - Revert last entry (admin only)";

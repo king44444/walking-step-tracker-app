@@ -26,9 +26,7 @@ $router->add('POST', '/api/send-sms', [$sms, 'send']);
 
 // Temporary compatibility routes for legacy Twilio webhooks during alpha.
 // These avoid requiring the old files while Twilio is reconfigured.
-$router->add('POST', '/api/sms.php', [$sms, 'inbound']);
-$router->add('POST', '/api/sms_status.php', [$sms, 'status']);
-$router->add('POST', '/api/send_sms.php', [$sms, 'send']);
+// Legacy .php path mappings removed (Twilio now points to /api/sms).
 
 // Admin UI: entries and users
 $admin = new \App\Controllers\AdminController();
