@@ -9,59 +9,115 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 2. Then commit: `git add -A && git commit -m "Description" && git push`
 3. Never skip these steps after modifying code
 
-Pathing Rules
+## Quick Deploy & Debug via SSH
+
+### Deploy to Server
+```bash
+# From local machine - deploys code and restarts services
+./scripts/deploy_to_pi.sh
+
+# Check deployment status
+ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && curl -s api/weeks.php | jq ."
+```
+
+### SSH Debug Commands
+```bash
+# Connect to server
+ssh mike@192.168.0.103
+cd /var/www/public_html/dev/html/walk
+
+# Check logs
+tail -f /var/log/nginx/error.log
+tail -20 data/logs/ai/award_images.log
+
+# Test database
+php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); echo \App\Config\DB::pdo()->query('SELECT 1')->fetchColumn() ? 'DB OK' : 'DB FAIL';"
+
+# Run PHP tests
+./vendor/bin/phpunit tests/ --testdox
+
+# Test SMS endpoints
+SMS_SMOKE_BASE_URL=http://localhost ./bin/smoke_sms.sh
+
+# Test award generation
+php -r "
+require 'vendor/autoload.php';
+require 'api/lib/settings.php';
+require 'api/lib/ai_images.php';
+\App\Core\Env::bootstrap('.');
+use \App\Config\DB;
+$result = ai_image_generate(['user_id' => 1, 'user_name' => 'Test', 'award_kind' => 'weekly_steps', 'milestone_value' => 10000]);
+echo 'Result: ' . ($result['ok'] ? 'SUCCESS' : 'FAILED') . PHP_EOL;
+if ($result['ok']) echo 'Path: ' . $result['path'] . PHP_EOL;
+"
+
+# Check settings
+php -r "
+require 'api/lib/settings.php';
+echo 'ai.enabled: ' . setting_get('ai.enabled', '1') . PHP_EOL;
+echo 'ai.award.enabled: ' . setting_get('ai.award.enabled', '1') . PHP_EOL;
+echo 'ai.image.provider: ' . setting_get('ai.image.provider', 'local') . PHP_EOL;
+echo 'ai.image.model: ' . setting_get('ai.image.model', '') . PHP_EOL;
+"
+```
+
+### Local Development Testing
+```bash
+# Run all tests
+./vendor/bin/phpunit tests/
+
+# Run specific test suite
+./vendor/bin/phpunit tests/SmsControllerTest.php --testdox
+
+# Test weeks API
+./scripts/test_weeks_api.sh
+
+# Test SMS smoke tests
+SMS_SMOKE_BASE_URL=http://localhost ./bin/smoke_sms.sh
+```
+
+## Pathing Rules
 - Public site pages under `site/` must not assume domain-root. Use relative paths.
-- Site asset policy (current):
-  - Load the full, battle‑tested UI from `../public/assets/` in `site/index.html` and `site/lifetime.html`:
-    - CSS: `../public/assets/css/app.css`
-    - JS module: `../public/assets/js/app/main.js`
+- Site asset policy:
+  - Load UI from `../public/assets/` in `site/index.html` and `site/lifetime.html`
+  - CSS: `../public/assets/css/app.css`
+  - JS: `../public/assets/js/app/main.js`
 - Admin asset policy:
-  - Admin pages live under `/admin/`. Use `../site/assets/` for shared images (e.g., fallback photo).
-  - A single PHP var is set at the top of admin pages when needed: `$SITE_ASSETS = '../site/assets';`
-  - Example: `$thumb = $u['photo_path'] ? ('/'.$u['photo_path']) : ($SITE_ASSETS . '/admin/no-photo.svg');`
-- API pathing from admin: use `../api/...` (no domain-root assumptions).
+  - Admin pages live under `/admin/`. Use `../site/assets/` for shared images
+  - API pathing from admin: use `../api/...` (no domain-root assumptions)
 
-Weeks Normalization
-- All weeks normalized to strict ISO `YYYY-MM-DD` and exposed as `starts_on`.
-- Added migration `database/migrations/20251006_weeks_normalize.php`.
-- Repair script `scripts/repair_weeks.php` pads dates, dedupes duplicate week rows (e.g., `2025-10-5` vs `2025-10-05`), remaps `entries.week` to the canonical ISO date, and re‑indexes.
+## API Contracts
+- `api/weeks.php`: GET returns `{ok, weeks[]}`, POST `action=create|delete`
+- `api/data.php`: Returns week data with normalization
+- SMS endpoints: `api/sms.php`, `api/send_sms.php`, `api/sms_status.php` (deprecated - use router `/api/...` instead; these delegate to SmsController and will be removed)
+- Award generation: `api/award_generate.php` (admin only)
 
-API Contracts (hardened)
-- `api/weeks.php`
-  - GET: `{ ok: true, weeks: [{ starts_on, label, finalized }] }` sorted desc, de‑duped.
-  - POST `action=create|delete` with `date`: validates/normalizes dates; `delete` supports `force=1` to cascade delete entries in a transaction. Never 500s the UI; logs server details to `api/logs/app.log`.
-- `api/data.php`
-  - Accepts `week` as `YYYY-M-D` or `YYYY-MM-DD`; normalizes; looks up snapshot if finalized or live rows if open.
-  - Returns `{ ok: true, week, label, finalized, source: 'snapshot'|'live', todayIdx, rows, firstReports, lifetimeStart }`.
-  - On exceptions: `{ ok:false, error:'server_error' }` and logs under `api/logs/app.log`.
+## Database & Migrations
+- SQLite database: `data/walkweek.sqlite`
+- Migrations in `database/migrations/`
+- Run migrations: `php api/migrate.php`
+- Settings table: Stores app configuration
+- SMS tables: `sms_audit`, `sms_outbound_audit`, `message_status`
 
-Frontend (site)
-- Week selector auto‑picks the most recent week that actually has data.
-- Public UI is served from `public/assets/js/app/` and `public/assets/css/` (do not re‑implement partial site‑local JS unless necessary).
-- Do not add admin controls (create/delete week) to public pages.
+## Testing & Quality
+- PHPUnit tests in `tests/` directory
+- SMS smoke tests: `bin/smoke_sms.sh`
+- API testing: `scripts/test_weeks_api.sh`
+- Award generation testing: Direct PHP execution
+- Code style: PHPStan and PHPCS configured
 
-Deployment
-- Script: `./scripts/deploy_to_pi.sh` (rsyncs files to Pi; ensures `api/data -> ../data` symlink; restarts php‑fpm; prints Weeks JSON).
-- Server base path: `http://<pi>/dev/html/walk`.
-- Data dir: `data/walkweek.sqlite` (kept server‑side; excluded from rsync).
+## Best Practices
+- Use relative paths only (no absolute `/assets/...`)
+- All database operations through PDO with prepared statements
+- Error logging to appropriate log files
+- CSRF protection on admin endpoints
+- Input validation and sanitization
+- Graceful fallbacks for external services (AI image generation)
+- Comprehensive test coverage for critical paths
 
-Checks / Tools
-- Asset check (live):
-  - CSS: `curl -fsS "${BASE:-https://mikebking.com/dev/html/walk}/public/assets/css/app.css"`
-  - JS:  `curl -fsS "${BASE:-https://mikebking.com/dev/html/walk}/public/assets/js/app/main.js"`
-- Weeks API smoke: `scripts/test_weeks_api.sh` (creates, dedup checks, delete w/ and w/o force).
-- Data repair: `php scripts/repair_weeks.php` (idempotent, safe).
-
-Conventions
-- Relative pathing only (no `/assets/...` or `/site/...` from pages under `site/` or `admin/`).
-- Admin → `../site/assets/...` for images; Admin → `../api/...` for API.
-- Site → load CSS/JS from `../public/assets/...` (source of truth for UI code).
-
-Known Notes
-- Tailwind CDN is used; console warns in production. This is safe but noisy; consider a Tailwind build via PostCSS in a future pass if desired.
-- `db_diag.php` currently 404s in deploy diagnostics; non‑blocking.
-
-Quick Tasks for Future Agents
-- Fix asset path regressions: follow the Pathing Rules above.
-- Add weeks or entries features: follow Weeks Normalization and API Contracts.
-- Before changing UI code under `site/`, prefer updating `public/assets/js/app/` once and consume it from `site/` via relative path.
+## Quick Tasks for Future Agents
+- Fix asset path regressions: follow Pathing Rules above
+- Add features: Follow existing API contracts and test patterns
+- Update UI: Modify `public/assets/` source files, not site copies
+- Debug issues: Use SSH commands above for server-side debugging
+- Test changes: Run full test suite before deploying

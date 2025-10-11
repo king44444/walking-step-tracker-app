@@ -6,7 +6,7 @@ use App\Config\DB;
 
 final class Outbound
 {
-    public static function sendSMS(string $to, string $body): bool
+    public static function sendSMS(string $to, string $body): ?string
     {
         // Read Twilio credentials from environment (Dotenv populates $_ENV)
         $accountSid = $_ENV['TWILIO_ACCOUNT_SID'] ?? null;
@@ -24,7 +24,7 @@ final class Outbound
             } catch (\Throwable $e) {
                 error_log('Outbound::sendSMS audit insert failed: ' . $e->getMessage());
             }
-            return false;
+            return null;
         }
 
         $url = "https://api.twilio.com/2010-04-01/Accounts/{$accountSid}/Messages.json";
@@ -77,6 +77,6 @@ final class Outbound
             error_log('Outbound::sendSMS audit insert failed: ' . $e->getMessage());
         }
 
-        return $httpCode >= 200 && $httpCode < 300;
+        return ($httpCode >= 200 && $httpCode < 300) ? $sid : null;
     }
 }

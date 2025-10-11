@@ -50,12 +50,15 @@ foreach ($rows as $r) {
   if ($type === 'award' && !$awardOn) { $skipped[] = $id; error_log('[ai] skipped category=award reason=award.disabled id='.$id); continue; }
   if ($to === '' || $body === '') { $errors[] = $id; continue; }
   try {
-    $res = send_outbound_sms($to, $body);
-    $sid = $res['sid'] ?? null;
-    $upd = $pdo->prepare('UPDATE ai_messages SET sent_at = datetime(\'now\'), provider = COALESCE(provider,\'openrouter\') WHERE id = :id');
-    $upd->execute([':id' => $id]);
-    $sent[] = $id;
-    usleep(200000); // 200ms
+    $sid = \App\Services\Outbound::sendSMS($to, $body);
+    if ($sid !== null) {
+      $upd = $pdo->prepare('UPDATE ai_messages SET sent_at = datetime(\'now\'), provider = COALESCE(provider,\'openrouter\') WHERE id = :id');
+      $upd->execute([':id' => $id]);
+      $sent[] = $id;
+      usleep(200000); // 200ms
+    } else {
+      $errors[] = $id;
+    }
   } catch (Throwable $e) {
     $errors[] = $id;
   }

@@ -57,16 +57,16 @@ function ai_image_generate(array $opts): array {
   $style = (string)($opts['style'] ?? 'badge');
   $force = (bool)($opts['force'] ?? false);
 
+  if ($uid <= 0 || $userName === '' || $kind === '' || $milestone <= 0) {
+    return ['ok'=>false, 'error'=>'bad_input'];
+  }
+
   if (!ai_image_can_generate()) {
     $ai = (string)setting_get('ai.enabled', '1');
     $aw = (string)setting_get('ai.award.enabled', '1');
     $reason = ($ai !== '1') ? 'ai.disabled' : (($aw !== '1') ? 'award.disabled' : 'not_configured');
     ai_image_log_event($uid, $userName, $kind, $milestone, 'skipped', $reason, 'fallback', null, null, null, null);
     return ['ok'=>true, 'skipped'=>true, 'reason'=>$reason];
-  }
-
-  if ($uid <= 0 || $userName === '' || $kind === '' || $milestone <= 0) {
-    return ['ok'=>false, 'error'=>'bad_input'];
   }
 
   // 24h idempotency: reuse the latest recent file if present unless force
@@ -254,7 +254,7 @@ function ai_image_provider_generate(string $prompt, array $params): array {
     @file_put_contents($debugDir . '/provider_debug.log', date('c') . " message_content: " . substr($content,0,2000) . "\n\n", FILE_APPEND);
 
     // Try to find a data: URL inline in the content
-    if (preg_match('~data:[^\\s\\'\"\\)]+~', $content, $m)) {
+    if (preg_match('~data:[^\\s\\\'"\\)]+~', $content, $m)) {
       $dataUrl = $m[0];
     } else {
       // Try to decode JSON embedded in content (strip code fences/backticks)

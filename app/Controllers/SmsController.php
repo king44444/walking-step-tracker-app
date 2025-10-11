@@ -27,6 +27,15 @@ class SmsController
         $now = now_in_tz();
         $createdAt = $now->format(\DateTime::ATOM);
 
+        // Admin prefix check
+        $ctx = ['is_admin' => false];
+        $adminEnabled = setting_get('sms.admin_prefix_enabled', '0') === '1';
+        $adminPassword = setting_get('sms.admin_password', '');
+        if ($adminEnabled && $adminPassword !== '' && preg_match('/^\s*\[\s*' . preg_quote($adminPassword, '/') . '\s*\]\s*(.*)$/i', $body, $m)) {
+            $body = trim($m[1]);
+            $ctx['is_admin'] = true;
+        }
+
         $insAudit = $pdo->prepare("INSERT INTO sms_audit(created_at,from_number,raw_body,parsed_day,parsed_steps,resolved_week,resolved_day,status) VALUES(?,?,?,?,?,?,?,?)");
 
         $audit_exec = function(array $params) use ($insAudit) {
@@ -72,8 +81,58 @@ class SmsController
             \App\Http\Responders\SmsResponder::error($errMsg, 'rate_limited', 429);
         }
 
-        // Parse input with single numeric group rule
+        // Look up user first for commands that need it
+        $stU = $pdo->prepare("SELECT id, name FROM users WHERE phone_e164=?");
+        $stU->execute([$e164]);
+        $u = $stU->fetch(\PDO::FETCH_ASSOC);
+        if (!$u) {
+            $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'unknown_number']);
+            $errMsg='We do not recognize this number. Ask admin to enroll your phone.';
+            \App\Http\Responders\SmsResponder::error($errMsg, 'unknown_number', 404);
+        }
+        $userId = (int)$u['id'];
+        $name = $u['name'];
+
+        // Parse input - check for commands first
         $raw_body = $body;
+        $body_upper = strtoupper($body);
+
+        // Command handling
+        if ($body_upper === 'HELP') {
+            $msg = $this->getHelpText($ctx['is_admin']);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif ($body_upper === 'TOTAL') {
+            $msg = $this->handleTotalCommand($pdo, $name);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif ($body_upper === 'WEEK') {
+            $msg = $this->handleWeekCommand($pdo, $name);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif (preg_match('/^INTERESTS\s+SET\s+(.+)$/i', $body, $m)) {
+            $msg = $this->handleInterestsSet($pdo, $name, trim($m[1]));
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif (strtoupper($body) === 'INTERESTS LIST') {
+            $msg = $this->handleInterestsList($pdo, $name);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif (preg_match('/^REMINDERS\s+(ON|OFF)$/i', $body, $m)) {
+            $msg = $this->handleRemindersToggle($pdo, $name, strtoupper($m[1]));
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif (preg_match('/^REMINDERS\s+WHEN\s+(.+)$/i', $body, $m)) {
+            $msg = $this->handleRemindersWhen($pdo, $name, trim($m[1]));
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        } elseif ($body_upper === 'UNDO' && $ctx['is_admin']) {
+            $msg = $this->handleUndoCommand($pdo, $name);
+            \App\Http\Responders\SmsResponder::ok($msg);
+            return;
+        }
+
+        // Steps parsing with single numeric group rule
         $body_norm = preg_replace('/(?<=\d)[\p{Zs}\x{00A0}\x{202F},\.](?=\d{3}\b)/u', '', $body);
         $body_norm = trim($body_norm);
 
@@ -84,8 +143,11 @@ class SmsController
         }
 
         $dayOverride = null; $steps = null;
+        // Support both orders: "MON 8200" and "8200 MON"
         if (preg_match('/^\s*([A-Za-z]{3,9})\b\D*([0-9]{2,})\s*$/', $body_norm, $m)) {
             $dayOverride=$m[1]; $steps=intval($m[2]);
+        } elseif (preg_match('/^\s*([0-9]{2,})\s+([A-Za-z]{3,9})\b.*$/', $body_norm, $m)) {
+            $steps=intval($m[1]); $dayOverride=$m[2];
         } elseif (preg_match('/^\s*([0-9]{2,})\s*$/', $body_norm, $m)) {
             $steps=intval($m[1]);
         } else {
@@ -99,16 +161,6 @@ class SmsController
             $errMsg='That number looks off. Try a value between 0 and 200,000.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'invalid_steps', 400);
         }
-
-        $stU = $pdo->prepare("SELECT name FROM users WHERE phone_e164=?");
-        $stU->execute([$e164]);
-        $u = $stU->fetch(\PDO::FETCH_ASSOC);
-        if (!$u) {
-            $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'unknown_number']);
-            $errMsg='We do not recognize this number. Ask admin to enroll your phone.';
-            \App\Http\Responders\SmsResponder::error($errMsg, 'unknown_number', 404);
-        }
-        $name = $u['name'];
 
         $dayCol = $this->resolveTargetDay($now, $dayOverride);
         if (!$dayCol) {
@@ -140,6 +192,14 @@ class SmsController
             }
         }
 
+        // Lifetime award check (best-effort)
+        try {
+            $this->handleLifetimeAward($pdo, $userId, $name, $e164);
+        } catch (\Throwable $e) {
+            error_log('SmsController::inbound lifetime award error: ' . $e->getMessage());
+            // Continue with confirmation SMS even if award fails
+        }
+
         $noonRule = !$dayOverride ? (intval($now->format('H'))<12 ? 'yesterday' : 'today') : strtolower($dayCol);
         $msg = "Recorded ".number_format($steps)." for $name on $noonRule.";
 
@@ -152,82 +212,82 @@ class SmsController
         require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
         \App\Core\Env::bootstrap(dirname(__DIR__, 2));
 
+        // Include required libraries for signature verification
+        require_once dirname(__DIR__, 2) . '/api/common_sig.php';
+
+        // Verify method
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
             exit;
         }
 
+        // Verify signature using the same logic as status_callback.php
         $authToken = getenv('TWILIO_AUTH_TOKEN') ?: '';
-        $url = TwilioSignature::buildTwilioUrl();
-        if (!TwilioSignature::verify($_POST, $url, $authToken)) {
-            http_response_code(403);
-            exit;
+        $signature = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
+
+        // Allow in test mode or trusted local addrs when no header present
+        $shouldSkip = twilio_should_skip() && $signature === '';
+        if (!$shouldSkip && $authToken !== '') {
+            $info = twilio_verify($_POST, $signature, $authToken);
+            if (getenv('TWILIO_SIG_DEBUG') === '1') {
+                error_log('SIG url=' . $info['url'] . ' match=' . (int)$info['match'] . ' hdr=' . $info['header'] . ' exp=' . $info['expected'] . ' post=' . json_encode($_POST, JSON_UNESCAPED_SLASHES));
+            }
+            if (!$info['match']) {
+                http_response_code(403);
+                exit;
+            }
         }
 
-        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('c');
+        // Collect fields (Twilio names)
+        $nowUtc = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('c');
 
-        $rec = [
-            ':message_sid' => $_POST['MessageSid'] ?? $_POST['SmsSid'] ?? null,
-            ':message_status' => $_POST['MessageStatus'] ?? $_POST['SmsStatus'] ?? null,
-            ':to_number' => $_POST['To'] ?? null,
-            ':from_number' => $_POST['From'] ?? null,
-            ':error_code' => $_POST['ErrorCode'] ?? null,
-            ':error_message' => $_POST['ErrorMessage'] ?? null,
-            ':messaging_service_sid' => $_POST['MessagingServiceSid'] ?? null,
-            ':account_sid' => $_POST['AccountSid'] ?? null,
-            ':api_version' => $_POST['ApiVersion'] ?? null,
-            ':raw_payload' => json_encode($_POST, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
-            ':received_at_utc' => $now,
+        $record = [
+            'message_sid' => $_POST['MessageSid'] ?? $_POST['SmsSid'] ?? null,
+            'message_status' => $_POST['MessageStatus'] ?? $_POST['SmsStatus'] ?? null,
+            'to_number' => $_POST['To'] ?? null,
+            'from_number' => $_POST['From'] ?? null,
+            'error_code' => $_POST['ErrorCode'] ?? null,
+            'error_message' => $_POST['ErrorMessage'] ?? null,
+            'messaging_service_sid' => $_POST['MessagingServiceSid'] ?? null,
+            'account_sid' => $_POST['AccountSid'] ?? null,
+            'api_version' => $_POST['ApiVersion'] ?? null,
+            'raw_payload' => json_encode($_POST, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'received_at_utc' => $nowUtc,
         ];
 
+        // Store to database
         try {
             $pdo = DB::pdo();
-            $pdo->exec('PRAGMA foreign_keys=ON');
 
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS message_status (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  message_sid TEXT UNIQUE,
-                  message_status TEXT,
-                  to_number TEXT,
-                  from_number TEXT,
-                  error_code TEXT,
-                  error_message TEXT,
-                  messaging_service_sid TEXT,
-                  account_sid TEXT,
-                  api_version TEXT,
-                  raw_payload TEXT,
-                  received_at_utc TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_message_status_sid ON message_status(message_sid);
-                CREATE INDEX IF NOT EXISTS idx_message_status_status ON message_status(message_status);
-            ");
-
+            // Upsert by message_sid (table now created by migration)
             $stmt = $pdo->prepare("
                 INSERT INTO message_status (
-                  message_sid, message_status, to_number, from_number, error_code, error_message,
-                  messaging_service_sid, account_sid, api_version, raw_payload, received_at_utc
+                    message_sid, message_status, to_number, from_number, error_code, error_message,
+                    messaging_service_sid, account_sid, api_version, raw_payload, received_at_utc
                 ) VALUES (
-                  :message_sid, :message_status, :to_number, :from_number, :error_code, :error_message,
-                  :messaging_service_sid, :account_sid, :api_version, :raw_payload, :received_at_utc
+                    :message_sid, :message_status, :to_number, :from_number, :error_code, :error_message,
+                    :messaging_service_sid, :account_sid, :api_version, :raw_payload, :received_at_utc
                 )
                 ON CONFLICT(message_sid) DO UPDATE SET
-                  message_status=excluded.message_status,
-                  to_number=excluded.to_number,
-                  from_number=excluded.from_number,
-                  error_code=excluded.error_code,
-                  error_message=excluded.error_message,
-                  messaging_service_sid=excluded.messaging_service_sid,
-                  account_sid=excluded.account_sid,
-                  api_version=excluded.api_version,
-                  raw_payload=excluded.raw_payload,
-                  received_at_utc=excluded.received_at_utc
+                    message_status=excluded.message_status,
+                    to_number=excluded.to_number,
+                    from_number=excluded.from_number,
+                    error_code=excluded.error_code,
+                    error_message=excluded.error_message,
+                    messaging_service_sid=excluded.messaging_service_sid,
+                    account_sid=excluded.account_sid,
+                    api_version=excluded.api_version,
+                    raw_payload=excluded.raw_payload,
+                    received_at_utc=excluded.received_at_utc
             ");
-            $stmt->execute($rec);
+            $stmt->execute($record);
         } catch (\Throwable $e) {
-            error_log('SmsController::status error: '.$e->getMessage());
+            // Fail closed but acknowledge to Twilio to avoid retries storms
+            error_log('SmsController::status error: ' . $e->getMessage());
+            http_response_code(200); // acknowledge anyway
         }
 
+        // Twilio expects 200 with no body
         http_response_code(200);
     }
 
@@ -259,13 +319,13 @@ class SmsController
         }
 
         // Use the Outbound service
-        $success = Outbound::sendSMS($to, $body);
+        $sid = Outbound::sendSMS($to, $body);
 
-        if ($success) {
-            echo json_encode(['ok'=>true]);
+        if ($sid !== null) {
+            echo json_encode(['ok' => true, 'sid' => $sid]);
         } else {
             http_response_code(502);
-            echo json_encode(['error'=>'send_failed']);
+            echo json_encode(['error' => 'send_failed']);
         }
     }
 
@@ -313,7 +373,7 @@ class SmsController
             $userId = (int)($usr['id'] ?? 0);
             $toPhone = (string)($usr['phone_e164'] ?? '');
 
-            $pdo->exec("CREATE TABLE IF NOT EXISTS user_stats(user_id INTEGER PRIMARY KEY, last_ai_at TEXT)");
+            // user_stats table now created by migration
             $last = $pdo->prepare('SELECT last_ai_at FROM user_stats WHERE user_id = ?');
             $last->execute([$userId]);
             $lastAt = (string)($last->fetchColumn() ?: '');
@@ -336,10 +396,11 @@ class SmsController
 
                 $auto = get_setting('ai_autosend');
                 if ($auto === '1' && $toPhone !== '') {
-                    require_once dirname(__DIR__, 2) . '/api/lib/outbound.php';
                     try {
-                        send_outbound_sms($toPhone, $content);
-                        $pdo->prepare('UPDATE ai_messages SET sent_at = datetime(\'now\') WHERE id = :id')->execute([':id'=>$pdo->query('SELECT last_insert_rowid()')->fetchColumn()]);
+                        $sid = \App\Services\Outbound::sendSMS($toPhone, $content);
+                        if ($sid !== null) {
+                            $pdo->prepare('UPDATE ai_messages SET sent_at = datetime(\'now\') WHERE id = :id')->execute([':id'=>$pdo->query('SELECT last_insert_rowid()')->fetchColumn()]);
+                        }
                     } catch (\Throwable $e) {
                         // leave unsent
                     }
@@ -349,3 +410,181 @@ class SmsController
             error_log('SmsController::inbound AI error: ' . $e->getMessage());
         }
     }
+
+    private function getHelpText(bool $isAdmin): string
+    {
+        $lines = [
+            "Commands:",
+            "Steps: 12345 or 'Tue 12345'",
+            "TOTAL - Your lifetime total",
+            "WEEK - This week's progress",
+            "INTERESTS SET a,b,c - Set interests",
+            "INTERESTS LIST - Show interests",
+            "REMINDERS ON|OFF - Toggle reminders",
+            "REMINDERS WHEN MORNING|EVENING|HH:MM - Set time",
+            "HELP - This message"
+        ];
+        if ($isAdmin) {
+            $lines[] = "UNDO - Revert last entry (admin only)";
+        }
+        return implode("\n", $lines);
+    }
+
+    private function handleTotalCommand(\PDO $pdo, string $name): string
+    {
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(COALESCE(monday,0) + COALESCE(tuesday,0) + COALESCE(wednesday,0) +
+                                COALESCE(thursday,0) + COALESCE(friday,0) + COALESCE(saturday,0)), 0) AS total
+            FROM entries WHERE name = ?
+        ");
+        $stmt->execute([$name]);
+        $total = (int)$stmt->fetchColumn();
+        return "Lifetime total: " . number_format($total) . " steps";
+    }
+
+    private function handleWeekCommand(\PDO $pdo, string $name): string
+    {
+        $week = $this->resolveActiveWeek($pdo);
+        if (!$week) {
+            return "No active week.";
+        }
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(monday,0) as mon, COALESCE(tuesday,0) as tue, COALESCE(wednesday,0) as wed,
+                   COALESCE(thursday,0) as thu, COALESCE(friday,0) as fri, COALESCE(saturday,0) as sat
+            FROM entries WHERE week = ? AND name = ?
+        ");
+        $stmt->execute([$week, $name]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$row) {
+            return "No entries this week.";
+        }
+        $days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+        $parts = [];
+        foreach ($days as $d) {
+            $steps = (int)$row[$d];
+            if ($steps > 0) {
+                $parts[] = ucfirst(substr($d, 0, 3)) . ": " . number_format($steps);
+            }
+        }
+        $total = array_sum(array_map('intval', $row));
+        return "This week: " . implode(", ", $parts) . " (Total: " . number_format($total) . ")";
+    }
+
+    private function handleInterestsSet(\PDO $pdo, string $name, string $interestsStr): string
+    {
+        $parts = array_map('trim', explode(',', $interestsStr));
+        $parts = array_filter($parts, fn($x) => $x !== '');
+        $parts = array_unique($parts);
+        sort($parts);
+        $normalized = implode(',', $parts);
+        $stmt = $pdo->prepare("UPDATE users SET interests = ? WHERE name = ?");
+        $stmt->execute([$normalized, $name]);
+        return "Interests updated.";
+    }
+
+    private function handleInterestsList(\PDO $pdo, string $name): string
+    {
+        $stmt = $pdo->prepare("SELECT interests FROM users WHERE name = ?");
+        $stmt->execute([$name]);
+        $interests = $stmt->fetchColumn();
+        if (!$interests) {
+            return "No interests set.";
+        }
+        return "Interests: " . $interests;
+    }
+
+    private function handleRemindersToggle(\PDO $pdo, string $name, string $state): string
+    {
+        $stmt = $pdo->prepare("UPDATE users SET reminders_enabled = ? WHERE name = ?");
+        $stmt->execute([$state === 'ON' ? 1 : 0, $name]);
+        return "Reminders " . strtolower($state) . ".";
+    }
+
+    private function handleRemindersWhen(\PDO $pdo, string $name, string $when): string
+    {
+        $when = strtoupper(trim($when));
+        if (!in_array($when, ['MORNING', 'EVENING']) && !preg_match('/^\d{1,2}:\d{2}$/', $when)) {
+            return "Invalid time. Use MORNING, EVENING, or HH:MM.";
+        }
+        $stmt = $pdo->prepare("UPDATE users SET reminders_when = ? WHERE name = ?");
+        $stmt->execute([$when, $name]);
+        return "Reminder time set to " . $when . ".";
+    }
+
+    private function handleUndoCommand(\PDO $pdo, string $name): string
+    {
+        $undoEnabled = setting_get('sms.undo_enabled', '0') === '1';
+        if (!$undoEnabled) {
+            return "Undo not enabled.";
+        }
+        // Find last entry for user
+        $stmt = $pdo->prepare("
+            SELECT week, monday, tuesday, wednesday, thursday, friday, saturday
+            FROM entries WHERE name = ? ORDER BY updated_at DESC LIMIT 1
+        ");
+        $stmt->execute([$name]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$row) {
+            return "No entries to undo.";
+        }
+        // For simplicity, set the last updated column to NULL
+        $week = $row['week'];
+        $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        $lastDay = null;
+        foreach (array_reverse($days) as $d) {
+            if ($row[$d] !== null) {
+                $lastDay = $d;
+                break;
+            }
+        }
+        if (!$lastDay) {
+            return "No steps to undo.";
+        }
+        $stmt = $pdo->prepare("UPDATE entries SET {$lastDay} = NULL, updated_at = datetime('now') WHERE week = ? AND name = ?");
+        $stmt->execute([$week, $name]);
+        return "Undid last entry.";
+    }
+
+    private function handleLifetimeAward(\PDO $pdo, int $userId, string $name, string $e164): void
+    {
+        require_once dirname(__DIR__, 2) . '/api/lib/awards.php';
+        $awards = get_lifetime_awards($pdo, $userId);
+        $newMilestones = [];
+        foreach ($awards as $award) {
+            if ($award['earned'] && $award['awarded_at'] === null) {
+                // Check if this is newly earned (no previous award record)
+                $stmt = $pdo->prepare("SELECT 1 FROM ai_awards WHERE user_id = ? AND kind = 'lifetime_steps' AND milestone_value = ?");
+                $stmt->execute([$userId, $award['threshold']]);
+                if (!$stmt->fetchColumn()) {
+                    $newMilestones[] = $award['threshold'];
+                }
+            }
+        }
+        if (empty($newMilestones)) {
+            return; // No new milestones
+        }
+
+        // Generate award image for the highest new milestone
+        $milestone = max($newMilestones);
+        $res = ai_image_generate([
+            'user_id' => $userId,
+            'user_name' => $name,
+            'award_kind' => 'lifetime_steps',
+            'milestone_value' => $milestone,
+            'style' => 'badge'
+        ]);
+
+        if ($res['ok'] ?? false) {
+            $baseUrl = setting_get('app.public_base_url', '');
+            if ($baseUrl !== '') {
+                $url = rtrim($baseUrl, '/') . "/site/user.php?id={$userId}";
+                $msg = "Congrats on " . number_format($milestone) . " steps! See your new award: {$url}";
+                try {
+                    \App\Services\Outbound::sendSMS($e164, $msg);
+                } catch (\Throwable $e) {
+                    error_log('Failed to send lifetime award SMS: ' . $e->getMessage());
+                }
+            }
+        }
+    }
+}

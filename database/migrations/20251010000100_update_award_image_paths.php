@@ -7,6 +7,13 @@ final class UpdateAwardImagePaths extends AbstractMigration
 {
     public function up(): void
     {
+        // Only run dev/test data seeding in development environment
+        $appEnv = getenv('APP_ENV') ?: 'prod';
+        if ($appEnv !== 'dev' && $appEnv !== 'test') {
+            echo "Skipping dev award data seeding in production environment\n";
+            return;
+        }
+
         // Update existing rows to point to the deployed webp files for user_id = 8
         $this->execute("UPDATE ai_awards SET image_path='awards/8/lifetime-steps-5000-20251010.webp' WHERE user_id=8 AND kind='lifetime_steps' AND milestone_value=5000;");
         $this->execute("UPDATE ai_awards SET image_path='awards/8/lifetime-steps-10000-20251010.webp' WHERE user_id=8 AND kind='lifetime_steps' AND milestone_value=10000;");
@@ -24,6 +31,13 @@ final class UpdateAwardImagePaths extends AbstractMigration
 
     public function down(): void
     {
+        // Only clean up dev data in dev/test environments
+        $appEnv = getenv('APP_ENV') ?: 'prod';
+        if ($appEnv !== 'dev' && $appEnv !== 'test') {
+            echo "Skipping dev award data cleanup in production environment\n";
+            return;
+        }
+
         // Revert the image_path changes for the specific deployed filenames created by this migration
         $this->execute("UPDATE ai_awards SET image_path = NULL WHERE user_id=8 AND kind='lifetime_steps' AND image_path LIKE 'awards/8/lifetime-steps-%-20251010.webp';");
     }

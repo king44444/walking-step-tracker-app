@@ -14,15 +14,12 @@ function settings_pdo(): PDO {
 
 function settings_ensure_schema(PDO $pdo): void {
   static $done = false; if ($done) return; $done = true;
-  $pdo->exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)");
-  // Add updated_at column if missing
+  // Schema now created by migration - just ensure it exists
   try {
-    $cols = $pdo->query("PRAGMA table_info(settings)")->fetchAll(PDO::FETCH_ASSOC);
-    $names = array_map(fn($c)=>$c['name']??'', $cols);
-    if (!in_array('updated_at', $names, true)) {
-      $pdo->exec("ALTER TABLE settings ADD COLUMN updated_at TEXT");
-    }
-  } catch (Throwable $e) { /* ignore */ }
+    $pdo->query("SELECT 1 FROM settings LIMIT 1");
+  } catch (Throwable $e) {
+    throw new RuntimeException("Settings table not found - run migrations first");
+  }
 }
 
 function settings_seed_defaults(PDO $pdo): void {
@@ -35,6 +32,11 @@ function settings_seed_defaults(PDO $pdo): void {
     'ai.image.provider' => 'openrouter',
     'sms.inbound_rate_window_sec' => '60',
     'sms.ai_rate_window_sec' => '120',
+    'sms.audit_retention_days' => '90',
+    'sms.admin_prefix_enabled' => '0',
+    'sms.admin_password' => '',
+    'sms.undo_enabled' => '0',
+    'app.public_base_url' => '',
   ];
   foreach ($defaults as $k => $v) {
     $st = $pdo->prepare("INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(:k,:v,datetime('now'))");

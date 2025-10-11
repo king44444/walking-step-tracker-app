@@ -20,7 +20,11 @@ function j200($arr){ echo json_encode($arr, JSON_UNESCAPED_SLASHES); exit; }
 try {
   if (session_status() !== PHP_SESSION_ACTIVE) session_start();
   $csrf = $_SERVER['HTTP_X_CSRF'] ?? '';
-  if (!\App\Security\Csrf::validate((string)$csrf)) { j200(['ok'=>false,'error'=>'invalid_csrf']); }
+  if (!\App\Security\Csrf::validate((string)$csrf)) {
+    // Log CSRF failure for debugging
+    error_log("CSRF validation failed. Token: '$csrf', Session tokens: " . json_encode($_SESSION['csrf_tokens'] ?? []));
+    j200(['ok'=>false,'error'=>'invalid_csrf']);
+  }
 
   $raw = file_get_contents('php://input') ?: '';
   $j = json_decode($raw, true);
@@ -48,6 +52,17 @@ try {
   if ($ai !== '1') { ai_image_log_event($userId, $userName, $kind, $milestone, 'skipped', 'ai.disabled', 'fallback', null, null, null); j200(['ok'=>true,'skipped'=>true,'reason'=>'ai.disabled']); }
   $aw = (string)setting_get('ai.award.enabled', '1');
   if ($aw !== '1') { ai_image_log_event($userId, $userName, $kind, $milestone, 'skipped', 'award.disabled', 'fallback', null, null, null); j200(['ok'=>true,'skipped'=>true,'reason'=>'award.disabled']); }
+
+  // Check if we can generate images at all
+  if (!ai_image_can_generate()) {
+    $reason = 'not_configured';
+    $ai_check = (string)setting_get('ai.enabled', '1');
+    $aw_check = (string)setting_get('ai.award.enabled', '1');
+    if ($ai_check !== '1') $reason = 'ai.disabled';
+    elseif ($aw_check !== '1') $reason = 'award.disabled';
+    ai_image_log_event($userId, $userName, $kind, $milestone, 'skipped', $reason, 'fallback', null, null, null);
+    j200(['ok'=>true,'skipped'=>true,'reason'=>$reason]);
+  }
 
   // Ensure ai_awards row
   $chk = $pdo->prepare('SELECT id, image_path FROM ai_awards WHERE user_id = :uid AND kind = :k AND milestone_value = :v LIMIT 1');
