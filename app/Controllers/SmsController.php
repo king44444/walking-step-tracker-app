@@ -58,7 +58,7 @@ class SmsController
         if (!$e164 || $body==='') {
             $audit_exec([$createdAt,$from,$body,null,null,null,null,'bad_request']);
             $errMsg = 'Sorry, we could not read your number or message. Please try again.';
-            $this->respondError($errMsg, 'bad_request', 400);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'bad_request', 400);
         }
 
         // Rate limit per number on last ok (configurable window)
@@ -69,7 +69,7 @@ class SmsController
         if ($stRL->fetchColumn()) {
             $audit_exec([$createdAt,$e164,$body,null,null,null,null,'rate_limited']);
             $errMsg = 'Got it! Please wait a minute before sending another update.';
-            $this->respondError($errMsg, 'rate_limited', 429);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'rate_limited', 429);
         }
 
         // Parse input with single numeric group rule
@@ -80,7 +80,7 @@ class SmsController
         if (preg_match_all('/\d+/', $body_norm, $mm) && count($mm[0]) > 1) {
             $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'too_many_numbers']);
             $errMsg = "Please send one number like 12345 or 'Tue 12345'.";
-            $this->respondError($errMsg, 'too_many_numbers', 400);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'too_many_numbers', 400);
         }
 
         $dayOverride = null; $steps = null;
@@ -91,13 +91,13 @@ class SmsController
         } else {
             $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'no_steps']);
             $errMsg = "Please send one number like 12345 or 'Tue 12345'.";
-            $this->respondError($errMsg, 'no_steps', 400);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'no_steps', 400);
         }
 
         if ($steps < 0 || $steps > 200000) {
             $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'invalid_steps']);
             $errMsg='That number looks off. Try a value between 0 and 200,000.';
-            $this->respondError($errMsg, 'invalid_steps', 400);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'invalid_steps', 400);
         }
 
         $stU = $pdo->prepare("SELECT name FROM users WHERE phone_e164=?");
@@ -106,7 +106,7 @@ class SmsController
         if (!$u) {
             $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'unknown_number']);
             $errMsg='We do not recognize this number. Ask admin to enroll your phone.';
-            $this->respondError($errMsg, 'unknown_number', 404);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'unknown_number', 404);
         }
         $name = $u['name'];
 
@@ -114,14 +114,14 @@ class SmsController
         if (!$dayCol) {
             $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'bad_day']);
             $errMsg='Unrecognized day. Use Mon..Sat or leave it out.';
-            $this->respondError($errMsg, 'bad_day', 400);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'bad_day', 400);
         }
 
         $week = $this->resolveActiveWeek($pdo);
         if (!$week) {
             $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,$dayCol,'no_active_week']);
             $errMsg='No active week to record to. Please try again later.';
-            $this->respondError($errMsg, 'no_active_week', 404);
+            \App\Http\Responders\SmsResponder::error($errMsg, 'no_active_week', 404);
         }
 
         Tx::with(function(\PDO $pdo) use ($week, $name, $dayCol, $steps) {
@@ -143,7 +143,7 @@ class SmsController
         $noonRule = !$dayOverride ? (intval($now->format('H'))<12 ? 'yesterday' : 'today') : strtolower($dayCol);
         $msg = "Recorded ".number_format($steps)." for $name on $noonRule.";
 
-        $this->respondSuccess($msg, $name, $steps, $noonRule);
+        \App\Http\Responders\SmsResponder::ok($msg);
     }
 
     public function status()
@@ -349,31 +349,3 @@ class SmsController
             error_log('SmsController::inbound AI error: ' . $e->getMessage());
         }
     }
-
-    private function respondError(string $message, string $error, int $code): void
-    {
-        $isTwilio = isset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
-        if (!$this->isInternalRequest() && $isTwilio) {
-            header('Content-Type: text/xml; charset=utf-8');
-            http_response_code(200);
-            echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>".htmlspecialchars($message, ENT_QUOTES, 'UTF-8')."</Message></Response>";
-        } else {
-            header('Content-Type: application/json; charset=utf-8');
-            http_response_code($code);
-            echo json_encode(['error'=>$error,'message'=>$message]);
-        }
-        exit;
-    }
-
-    private function respondSuccess(string $message, string $name, int $steps, string $day): void
-    {
-        $isTwilio = isset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
-        if (!$this->isInternalRequest() && $isTwilio) {
-            header('Content-Type: text/xml; charset=utf-8');
-            echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response><Message>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</Message></Response>";
-        } else {
-            header('Content-Type: application/json; charset=utf-8');
-            echo json_encode(['ok'=>true,'message'=>$message,'name'=>$name,'steps'=>$steps,'day'=>$day]);
-        }
-    }
-}
