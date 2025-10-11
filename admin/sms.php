@@ -13,14 +13,17 @@ $controller = new AdminSmsController();
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
+// Extract the relevant path part (everything after /admin/)
+$adminPath = preg_replace('#^.*?/admin/#', '', $path);
+
 // Route to controller methods
 if ($method === 'GET') {
-    // /admin/sms.php -> index
-    if (preg_match('#^/admin/sms\.php$#', $path)) {
+    // sms.php -> index
+    if ($adminPath === 'sms.php') {
         echo $controller->index();
     }
-    // /admin/sms.php/messages -> messages
-    elseif (preg_match('#^/admin/sms\.php/messages$#', $path)) {
+    // sms.php/messages -> messages
+    elseif ($adminPath === 'sms.php/messages') {
         echo $controller->messages();
     }
     else {
@@ -29,16 +32,16 @@ if ($method === 'GET') {
     }
 }
 elseif ($method === 'POST') {
-    // /admin/sms.php/send -> send
-    if (preg_match('#^/admin/sms\.php/send$#', $path)) {
+    // sms.php/send -> send
+    if ($adminPath === 'sms.php/send') {
         echo $controller->send();
     }
-    // /admin/sms.php/upload -> upload
-    elseif (preg_match('#^/admin/sms\.php/upload$#', $path)) {
+    // sms.php/upload -> upload
+    elseif ($adminPath === 'sms.php/upload') {
         echo $controller->upload();
     }
-    // /admin/sms.php/start-user -> startUser
-    elseif (preg_match('#^/admin/sms\.php/start-user$#', $path)) {
+    // sms.php/start-user -> startUser
+    elseif ($adminPath === 'sms.php/start-user') {
         echo $controller->startUser();
     }
     else {
