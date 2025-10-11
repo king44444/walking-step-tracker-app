@@ -7,6 +7,8 @@ set -e
 # Configuration
 BASE_URL="${SMS_SMOKE_BASE_URL:-http://localhost}"
 SECRET="${SMS_SMOKE_SECRET:-test_secret}"
+HOST_HEADER="${SMS_SMOKE_HOST_HEADER:-}"
+INSECURE="${SMS_SMOKE_INSECURE:-0}"
 
 echo "=== SMS Smoke Test ==="
 echo "Base URL: $BASE_URL"
@@ -31,10 +33,16 @@ test_endpoint() {
 
     # Build curl command
     local curl_cmd="curl -s -X $method"
+    if [ "$INSECURE" = "1" ]; then
+        curl_cmd="$curl_cmd -k"
+    fi
 
     # Add headers
     if [ -n "$headers" ]; then
         curl_cmd="$curl_cmd $headers"
+    fi
+    if [ -n "$HOST_HEADER" ]; then
+        curl_cmd="$curl_cmd -H 'Host: $HOST_HEADER'"
     fi
 
     # Add data
