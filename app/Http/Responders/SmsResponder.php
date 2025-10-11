@@ -66,7 +66,8 @@ class SmsResponder
     private static function sendXmlResponse(string $message, int $httpCode): void
     {
         header('Content-Type: text/xml; charset=utf-8');
-        http_response_code($httpCode);
+        // Twilio expects 200 OK for webhook responses, even on logical errors
+        http_response_code(200);
         echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response><Message>" . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . "</Message></Response>";
     }
 
