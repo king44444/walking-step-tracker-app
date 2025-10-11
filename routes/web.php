@@ -10,7 +10,8 @@ $router->add('GET', '/api/debug', function() {
     return json_encode([
         'method' => $_SERVER['REQUEST_METHOD'] ?? '',
         'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
-        'path' => parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH),
+        'path_raw' => parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH),
+        'path_norm' => $_SERVER['X_ROUTER_PATH'] ?? '',
     ]);
 });
 $router->add('GET', '/admin/ai', [new AdminController(), 'ai']); // kept for compatibility

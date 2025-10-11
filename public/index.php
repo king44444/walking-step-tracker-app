@@ -18,4 +18,6 @@ if (strpos($path, $base) === 0) {
     $path = substr($path, strlen($base));
     if ($path === '') $path = '/';
 }
+// Expose for debug routes
+$_SERVER['X_ROUTER_PATH'] = $path;
 $router->dispatch($_SERVER['REQUEST_METHOD'], $path);
