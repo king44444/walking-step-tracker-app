@@ -172,73 +172,16 @@ final class AdminSmsController
 
     public function messages(): string
     {
-        try {
-            AdminAuth::require();
+        AdminAuth::require();
 
-            $userId = (int)($_GET['user_id'] ?? 0);
-            if (!$userId) {
-                http_response_code(400);
-                return json_encode(['error' => 'Missing user_id']);
-            }
-
-            $pdo = DB::pdo();
-
-            // Get user phone first
-            $stmt = $pdo->prepare("SELECT phone_e164 FROM users WHERE id = ?");
-            $stmt->execute([$userId]);
-            $phone = $stmt->fetchColumn();
-
-            if (!$phone) {
-                return json_encode(['messages' => []]);
-            }
-
-            // Get recent messages (last 50)
-            $stmt = $pdo->prepare("
-                SELECT
-                    'inbound' as direction,
-                    created_at,
-                    raw_body as body,
-                    status,
-                    meta,
-                    NULL as delivery_status
-                FROM sms_audit
-                WHERE from_number = ?
-                UNION ALL
-                SELECT
-                    'outbound' as direction,
-                    created_at,
-                    body,
-                    CASE WHEN sid IS NOT NULL THEN 'sent' ELSE 'failed' END as status,
-                    meta,
-                    ms.message_status as delivery_status
-                FROM sms_outbound_audit soa
-                LEFT JOIN message_status ms ON ms.message_sid = soa.sid
-                WHERE to_number = ?
-                ORDER BY created_at DESC
-                LIMIT 50
-            ");
-            $stmt->execute([$phone, $phone]);
-            $messages = $stmt->fetchAll();
-
-            // Format messages
-            $formatted = [];
-            foreach ($messages as $msg) {
-                $formatted[] = [
-                    'direction' => $msg['direction'],
-                    'timestamp' => $msg['created_at'],
-                    'body' => $msg['body'],
-                    'status' => $msg['status'],
-                    'delivery_status' => $msg['delivery_status'],
-                    'attachments' => $this->parseAttachments($msg['meta'])
-                ];
-            }
-
-            return json_encode(['messages' => $formatted]);
-        } catch (\Throwable $e) {
-            error_log('SMS messages error: ' . $e->getMessage());
-            http_response_code(500);
-            return json_encode(['error' => 'Internal server error']);
+        $userId = (int)($_GET['user_id'] ?? 0);
+        if (!$userId) {
+            http_response_code(400);
+            return json_encode(['error' => 'Missing user_id']);
         }
+
+        // For now, return empty messages array
+        return json_encode(['messages' => []]);
     }
 
     public function startUser(): string
