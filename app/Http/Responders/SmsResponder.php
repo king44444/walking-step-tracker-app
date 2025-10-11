@@ -49,6 +49,11 @@ class SmsResponder
             self::sendJsonResponse($message, $errorType, $httpCode);
         }
 
+        // In CLI (tests), avoid exit to keep buffers stable
+        if (PHP_SAPI === 'cli') {
+            return;
+        }
+
         // Don't exit in test environment
         if (!class_exists('PHPUnit\Framework\TestCase', false)) {
             exit;

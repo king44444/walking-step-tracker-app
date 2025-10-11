@@ -5,15 +5,19 @@ use App\Http\Responders\SmsResponder;
 
 class SmsResponderTest extends TestCase
 {
+    private int $baseObLevel;
+
     protected function setUp(): void
     {
-        // Start a fresh output buffer for each test
+        // Record base buffer level and start one buffer this test will own
+        $this->baseObLevel = ob_get_level();
         ob_start();
     }
 
     protected function tearDown(): void
     {
-        if (ob_get_level() > 0) {
+        // Restore buffer level to what it was before this test
+        while (ob_get_level() > $this->baseObLevel) {
             ob_end_clean();
         }
         // Clear request context between tests
