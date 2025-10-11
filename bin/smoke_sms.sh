@@ -56,13 +56,13 @@ test_endpoint() {
 # Test 1: Inbound SMS (TwiML response)
 test_endpoint "POST" "$BASE_URL/api/sms" \
     "From=%2B15551234567&Body=Mon+10k+Tue+12k&MessageSid=SM123456789" \
-    "-H 'X-Twilio-Signature: test_signature' -H 'X-Internal-Secret: $SECRET'" \
+    "-H 'X-Internal-Secret: $SECRET'" \
     "Inbound SMS - Happy Path"
 
 # Test 2: Inbound SMS (JSON response)
 test_endpoint "POST" "$BASE_URL/api/sms?format=json" \
     "From=%2B15551234567&Body=Mon+10k+Tue+12k&MessageSid=SM123456789" \
-    "-H 'X-Twilio-Signature: test_signature' -H 'X-Internal-Secret: $SECRET'" \
+    "-H 'X-Internal-Secret: $SECRET'" \
     "Inbound SMS - JSON Response"
 
 # Test 3: Outbound SMS
@@ -74,13 +74,13 @@ test_endpoint "POST" "$BASE_URL/api/send-sms" \
 # Test 4: Status Callback - Delivered
 test_endpoint "POST" "$BASE_URL/api/sms/status" \
     "MessageSid=SM123456789&MessageStatus=delivered&To=%2B15551234567&From=%2B15559876543" \
-    "-H 'X-Twilio-Signature: test_signature' -H 'X-Internal-Secret: $SECRET'" \
+    "-H 'X-Internal-Secret: $SECRET'" \
     "Status Callback - Delivered"
 
 # Test 5: Status Callback - Failed
 test_endpoint "POST" "$BASE_URL/api/sms/status" \
     "MessageSid=SM123456789&MessageStatus=failed&To=%2B15551234567&From=%2B15559876543&ErrorCode=30001" \
-    "-H 'X-Twilio-Signature: test_signature' -H 'X-Internal-Secret: $SECRET'" \
+    "-H 'X-Internal-Secret: $SECRET'" \
     "Status Callback - Failed"
 
 # Test 6: Rate Limited Request (simulate by sending multiple requests quickly)
