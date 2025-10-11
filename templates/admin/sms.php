@@ -86,7 +86,7 @@
         });
 
         function loadMessages() {
-            fetch(`/admin/sms.php/messages?user_id=${currentUserId}`)
+            fetch(`sms.php/messages?user_id=${currentUserId}`)
                 .then(response => response.json())
                 .then(data => {
                     const panel = document.getElementById('messages-panel');
@@ -154,7 +154,7 @@
                 formData.append('files[]', file);
             }
 
-            fetch('/admin/sms.php/upload', {
+            fetch('sms.php/upload', {
                 method: 'POST',
                 body: formData
             })
@@ -210,7 +210,7 @@
             const formData = new FormData(this);
             formData.append('attachments', JSON.stringify(uploadedFiles.map(f => f.id)));
 
-            fetch('/admin/sms.php/send', {
+            fetch('sms.php/send', {
                 method: 'POST',
                 body: formData
             })
@@ -235,7 +235,7 @@
             formData.append('csrf', '<?= htmlspecialchars($csrfToken) ?>');
             formData.append('user_id', currentUserId);
 
-            fetch('/admin/sms.php/start-user', {
+            fetch('sms.php/start-user', {
                 method: 'POST',
                 body: formData
             })
