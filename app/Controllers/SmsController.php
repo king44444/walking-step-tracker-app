@@ -17,6 +17,8 @@ class SmsController
 
         // Include required libraries
         require_once dirname(__DIR__, 2) . '/api/lib/dates.php';
+        require_once dirname(__DIR__, 2) . '/api/lib/settings.php';
+        require_once dirname(__DIR__, 2) . '/api/util.php';
 
         $pdo = DB::pdo();
         $from = $_POST['From'] ?? '';
