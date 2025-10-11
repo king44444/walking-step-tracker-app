@@ -5,6 +5,14 @@ use App\Controllers\SmsController;
 
 /** @var Router $router */
 $router->add('GET', '/', fn() => 'OK');
+$router->add('GET', '/api/debug', function() {
+    header('Content-Type: application/json; charset=utf-8');
+    return json_encode([
+        'method' => $_SERVER['REQUEST_METHOD'] ?? '',
+        'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+        'path' => parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH),
+    ]);
+});
 $router->add('GET', '/admin/ai', [new AdminController(), 'ai']); // kept for compatibility
 
 // AI MVC routes removed; using file-based /api/*.php endpoints instead.
