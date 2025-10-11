@@ -10,7 +10,7 @@ require_once __DIR__ . '/../db.php';
  *   });
  */
 function with_txn_retry(callable $fn, int $retries = 5, int $sleepMs = 200) {
-  $pdo = pdo();
+  $pdo = \App\Config\DB::pdo();
   for ($i = 0; $i <= $retries; $i++) {
     try {
       $pdo->exec('BEGIN IMMEDIATE;');

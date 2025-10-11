@@ -6,12 +6,11 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 
-require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/lib/admin_auth.php';
 
 require_admin();
 
-$pdo = pdo();
+$pdo = \App\Config\DB::pdo();
 $status = $_GET['status'] ?? 'unsent';
 $where = '1=1';
 if ($status === 'unsent') { $where = 'm.sent_at IS NULL'; }
@@ -35,4 +34,3 @@ $out = array_map(function($r){
   ];
 }, $rows);
 echo json_encode(['ok'=>true,'messages'=>$out]);
-

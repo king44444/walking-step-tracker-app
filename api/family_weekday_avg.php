@@ -1,12 +1,13 @@
 <?php
 // DEPRECATED: This endpoint will be removed; use router /api/... instead
 header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
-require_once __DIR__ . '/util.php';  // provides pdo()
+require_once __DIR__ . '/../vendor/autoload.php';
+\App\Core\Env::bootstrap(dirname(__DIR__));
 
 header('Content-Type: application/json');
 
 try {
-  $db = pdo();
+  $db = \App\Config\DB::pdo();
 
   // 1) For each week, sum family totals per day
   // 2) Average those weekly sums across weeks

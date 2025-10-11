@@ -6,7 +6,6 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 
-require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/lib/admin_auth.php';
 require_once __DIR__ . '/lib/outbound.php';
 require_once __DIR__ . '/lib/settings.php';
@@ -16,7 +15,7 @@ require_admin();
 $csrf = $_SERVER['HTTP_X_CSRF'] ?? ($_POST['csrf'] ?? '');
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 if (!\App\Security\Csrf::validate((string)$csrf)) { http_response_code(403); echo json_encode(['ok'=>false,'error'=>'invalid_csrf']); exit; }
-$pdo = pdo();
+$pdo = \App\Config\DB::pdo();
 
 $week = isset($_POST['week']) ? (string)$_POST['week'] : '';
 $where = 'approved_by IS NOT NULL AND sent_at IS NULL';

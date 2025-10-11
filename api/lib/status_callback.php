@@ -68,11 +68,9 @@ $record = [
 
 // ----- store to SQLite -----
 try {
-    $pdo = new PDO('sqlite:' . $dbFile, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-    $pdo->exec('PRAGMA foreign_keys = ON');
+    require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
+    \App\Core\Env::bootstrap(dirname(__DIR__, 2));
+    $pdo = \App\Config\DB::pdo();
 
     // Create table if missing
     $pdo->exec("

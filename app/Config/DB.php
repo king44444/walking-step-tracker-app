@@ -37,7 +37,7 @@ final class DB
             $pdo->exec('PRAGMA foreign_keys=ON');
 
             // busy timeout (milliseconds) — also keep PDO::ATTR_TIMEOUT (seconds) for driver-level waits
-            $pdo->exec('PRAGMA busy_timeout=10000');
+            $pdo->exec('PRAGMA busy_timeout=60000'); // 60 seconds for high concurrency
 
             // Ensure WAL mode is enabled and verify result
             $current = strtolower((string)$pdo->query('PRAGMA journal_mode')->fetchColumn());
@@ -47,7 +47,7 @@ final class DB
                 $current = strtolower((string)$pdo->query('PRAGMA journal_mode')->fetchColumn());
             }
 
-            // Other performance/resilience pragmas
+            // Other performance/resilience pragmas (matching legacy pdo() function)
             $pdo->exec('PRAGMA synchronous=NORMAL');
             $pdo->exec('PRAGMA temp_store=MEMORY');
             $pdo->exec('PRAGMA wal_autocheckpoint=1000');
