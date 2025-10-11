@@ -11,19 +11,14 @@ use App\Controllers\AdminSmsController;
 
 $controller = new AdminSmsController();
 $method = $_SERVER['REQUEST_METHOD'];
-$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-
-// Extract the relevant path part (everything after /admin/)
-$adminPath = preg_replace('#^.*?/admin/#', '', $path);
+$action = $_GET['action'] ?? 'index';
 
 // Route to controller methods
 if ($method === 'GET') {
-    // sms.php -> index
-    if ($adminPath === 'sms.php') {
+    if ($action === 'index') {
         echo $controller->index();
     }
-    // sms.php/messages -> messages
-    elseif ($adminPath === 'sms.php/messages') {
+    elseif ($action === 'messages') {
         echo $controller->messages();
     }
     else {
@@ -32,16 +27,13 @@ if ($method === 'GET') {
     }
 }
 elseif ($method === 'POST') {
-    // sms.php/send -> send
-    if ($adminPath === 'sms.php/send') {
+    if ($action === 'send') {
         echo $controller->send();
     }
-    // sms.php/upload -> upload
-    elseif ($adminPath === 'sms.php/upload') {
+    elseif ($action === 'upload') {
         echo $controller->upload();
     }
-    // sms.php/start-user -> startUser
-    elseif ($adminPath === 'sms.php/start-user') {
+    elseif ($action === 'start-user') {
         echo $controller->startUser();
     }
     else {
