@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+// Debug: Log that we reached this file
+error_log('admin/sms.php reached - REQUEST_URI: ' . ($_SERVER['REQUEST_URI'] ?? 'none'));
+error_log('admin/sms.php reached - GET: ' . json_encode($_GET));
+error_log('admin/sms.php reached - REQUEST_METHOD: ' . ($_SERVER['REQUEST_METHOD'] ?? 'none'));
+
 require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 require_once __DIR__ . '/../api/lib/admin_auth.php';
@@ -13,12 +18,16 @@ $controller = new AdminSmsController();
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? 'index';
 
+// Debug: Log routing info
+error_log("admin/sms.php routing - method: $method, action: $action");
+
 // Route to controller methods
 if ($method === 'GET') {
     if ($action === 'index') {
         echo $controller->index();
     }
     elseif ($action === 'messages') {
+        error_log('admin/sms.php calling messages()');
         echo $controller->messages();
     }
     else {
