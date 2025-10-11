@@ -124,9 +124,15 @@ class SmsController
         });
         $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
 
+        // AI reply processing (best-effort - don't let failures block confirmation)
         $aiOn = setting_get('ai.enabled', '1');
         if ($aiOn === '1') {
-            $this->handleAiReply($pdo, $name, $raw_body, $week, $e164);
+            try {
+                $this->handleAiReply($pdo, $name, $raw_body, $week, $e164);
+            } catch (\Throwable $e) {
+                error_log('SmsController::inbound AI error: ' . $e->getMessage());
+                // Continue with confirmation SMS even if AI fails
+            }
         }
 
         $noonRule = !$dayOverride ? (intval($now->format('H'))<12 ? 'yesterday' : 'today') : strtolower($dayCol);
