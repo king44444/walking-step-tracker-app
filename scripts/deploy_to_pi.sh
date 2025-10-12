@@ -127,5 +127,8 @@ echo
 echo "Weeks JSON:"
 curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
 echo
+echo "Health:"
+curl -sS "http://${PI_HOST}/dev/html/walk/api/health.php" || true
+echo
 echo "Backup saved at: ${BACKUP_TAR}"
 echo "Done."
