@@ -120,7 +120,7 @@ class SmsResponderTest extends TestCase
         SmsResponder::ok('Recorded 1,240 for Mike on today.');
         $output = ob_get_clean();
         $this->assertStringContainsString('Recorded 1,240 for Mike on today.', $output);
-        $this->assertStringContainsString('Visit https://mikebking.com/dev/html/walk/site/', $output);
+        $this->assertStringContainsString("\nVisit https://mikebking.com/dev/html/walk/site/", $output);
         $this->assertStringContainsString('text &quot;walk&quot; or &quot;menu&quot; for menu', $output);
     }
 
@@ -132,7 +132,7 @@ class SmsResponderTest extends TestCase
         SmsResponder::ok('Recorded 1,240 for Mike on tuesday.');
         $output = ob_get_clean();
         $this->assertStringContainsString('Recorded 1,240 for Mike on tuesday.', $output);
-        $this->assertStringContainsString('Visit https://mikebking.com/dev/html/walk/site/', $output);
+        $this->assertStringContainsString("\nVisit https://mikebking.com/dev/html/walk/site/", $output);
     }
 
     public function testNoDuplicateWhenUrlAlreadyPresent()
@@ -145,6 +145,41 @@ class SmsResponderTest extends TestCase
         $output = ob_get_clean();
         // The message should not contain the URL twice
         $this->assertEquals(1, substr_count($output, 'https://mikebking.com/dev/html/walk/site/'));
+    }
+
+    public function testMenuBlockHasNoUrlAndFooterOnNewLine()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        $_ENV['SITE_URL'] = 'https://mikebking.com/dev/html/walk/site/';
+
+        // Build the menu text from controller
+        $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
+        $m = $rc->getMethod('getHelpText');
+        $m->setAccessible(true);
+        $ctrl = new \App\Controllers\SmsController();
+        $menu = $m->invoke($ctrl, false);
+
+        // Sanity check: menu ends with the command list line and contains no URL
+        $this->assertStringEndsWith('WALK or MENU - Command list', $menu);
+        $this->assertStringNotContainsString('http', $menu);
+
+        SmsResponder::ok($menu);
+        $output = ob_get_clean();
+
+        // Footer appended once, on a new line, with canonical URL
+        $this->assertStringContainsString("\nVisit https://mikebking.com/dev/html/walk/site/", $output);
+        // Ensure the URL is not inside the command block
+        $this->assertStringNotContainsString('WALK or MENU - Command list Visit', $output);
+    }
+
+    public function testFooterSingleTrailingSlashNormalization()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        $_ENV['SITE_URL'] = 'https://example.com/walk/site////';
+        SmsResponder::ok('Any message');
+        $output = ob_get_clean();
+        $this->assertStringContainsString("\nVisit https://example.com/walk/site/", $output);
+        $this->assertEquals(1, substr_count($output, 'https://example.com/walk/site/'));
     }
 
     public function testFooterDbFallbackWhenEnvMissing()
