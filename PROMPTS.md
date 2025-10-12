@@ -166,3 +166,29 @@ Act mode:
 The admin SMS console now provides full visibility into user message history, attachment management, and SMS settings configuration with proper compliance handling.
 
 These three prompts implement your admin SMS gate, revised commands, interests, award link behavior, reminders, and the admin SMS console, while keeping AI toggles admin-only and HELP clean.
+
+⸻
+
+Prompt — Numeric step replies should include footer
+
+Bug: Numeric step submissions return a bare message without the footer. Example:
+Recorded 1,240 for Mike on today.
+It should include the site URL reminder and the “info/walk” hint.
+
+Fix it:
+	1.	Find the SMS handling path for numeric inputs ("12345" and "Tue 12345"). Ensure the reply flows through the same footer appender used elsewhere (e.g., SmsResponder::withReminder() or SmsResponder::finalize()).
+	2.	Do not hard-code the URL. Load from SITE_URL env, then settings fallback (already implemented). Prevent duplicate URL or duplicate “info/walk” text.
+	3.	Apply the same footer to both:
+	•	plain number (today)
+	•	day + number (specific weekday)
+	4.	Keep existing message text. Only append the standard footer:
+Visit {SITE_URL} — text "info" or "walk" for menu.
+	5.	Add PHPUnit tests:
+	•	"1240" → body ends with the footer.
+	•	"Tue 1240" → body ends with the footer.
+	•	A message that already includes the URL does not duplicate it.
+	6.	Run tests and confirm TwiML responses for these cases include the footer.
+
+Acceptance:
+	•	Sending 1240 yields one SMS like:
+Recorded 1,240 for Mike on today. Visit https://…/walk — text "info" or "walk" for menu.
