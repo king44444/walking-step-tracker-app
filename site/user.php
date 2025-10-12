@@ -259,7 +259,7 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
           <h1 class="text-2xl sm:text-3xl font-extrabold leading-tight"><?= e($user['name']) ?> <?= $user['tag'] ? '<span class="text-white/60 text-base">('.e($user['tag']).')</span>' : '' ?></h1>
         </div>
       </div>
-      <div class="hidden sm:flex items-center gap-2">
+      <div class="flex items-center gap-2">
         <a href="./" class="btn">← Back</a>
       </div>
     </div>
