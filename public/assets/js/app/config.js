@@ -23,6 +23,7 @@ export let NUDGES = [
 
 export let CUSTOM_AWARD_LABELS = {};
 export let DAILY_MILESTONES = [];
+export let AWARDS_SETTINGS = { milestone_colors: {}, chip_text_color: '#FFFFFF', chip_border_opacity: 0.2 };
 export let LIFETIME_STEP_MILESTONES = [100000,250000,500000,1000000];
 export let LIFETIME_ATTENDANCE_MILESTONES = [25,50,100];
 
@@ -55,15 +56,39 @@ export async function loadConfig() {
 
     // Try to load public-facing dynamic settings (daily milestones)
     try {
-      const pub = await fetch(`${BASE}api/public_settings.php`, { cache: 'no-store' });
+      const pub = await fetch(`${BASE}api/public_settings.php?v=${encodeURIComponent(APP_VERSION)}`, { cache: 'no-store' });
       if (pub.ok) {
         const pj = await pub.json();
         if (pj && Array.isArray(pj.daily_milestones)) {
           DAILY_MILESTONES = pj.daily_milestones;
         }
+        if (pj && pj.awards_settings && typeof pj.awards_settings === 'object') {
+          AWARDS_SETTINGS = {
+            milestone_colors: pj.awards_settings.milestone_colors || {},
+            chip_text_color: pj.awards_settings.chip_text_color || '#FFFFFF',
+            chip_border_opacity: Number.isFinite(Number(pj.awards_settings.chip_border_opacity)) ? Number(pj.awards_settings.chip_border_opacity) : 0.2,
+          };
+        }
       }
     } catch (e) {
-      // ignore - keep defaults or previously loaded values
+      // If public_settings fails, try direct awards_settings
+      try {
+        const aw = await fetch(`${BASE}api/awards_settings.php?v=${encodeURIComponent(APP_VERSION)}`, { cache: 'no-store' });
+        if (aw.ok) {
+          const aj = await aw.json();
+          if (aj && typeof aj === 'object') {
+            AWARDS_SETTINGS = {
+              milestone_colors: aj.milestone_colors || {},
+              chip_text_color: aj.chip_text_color || '#FFFFFF',
+              chip_border_opacity: Number.isFinite(Number(aj.chip_border_opacity)) ? Number(aj.chip_border_opacity) : 0.2,
+            };
+          }
+        } else {
+          console.warn('awards_settings fetch failed, using defaults');
+        }
+      } catch (e2) {
+        console.warn('Failed to fetch awards_settings; using defaults', e2);
+      }
     }
 
   LEVEL_K = cfg.LEVELS?.K ?? LEVEL_K;

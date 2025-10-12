@@ -1,4 +1,4 @@
-import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION, DAILY_MILESTONES } from './config.js';
+import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION, DAILY_MILESTONES, AWARDS_SETTINGS } from './config.js';
 import { fmt, safe, pickNudge, setStatus } from './utils.js';
 import { fetchFamilyWeekdayAverages } from './api.js';
 
@@ -11,19 +11,95 @@ const palette = [
   '#a78bfa','#60a5fa','#7dd3fc','#64748b','#fda4af','#fde68a','#bbf7d0','#e9d5ff'
 ];
 
-// Helper to pick badge color classes based on milestone steps (simple heuristic)
-function badgeClassForSteps(steps) {
-  // return { bg: 'bg-emerald-500/15', text: 'text-emerald-300' }
-  try {
-    const s = Number(steps) || 0;
-    if (s >= 30000) return { bg: 'bg-emerald-500/15', text: 'text-emerald-300' };
-    if (s >= 20000) return { bg: 'bg-yellow-500/15', text: 'text-yellow-300' };
-    if (s >= 15000) return { bg: 'bg-lime-500/15', text: 'text-lime-300' };
-    if (s >= 10000) return { bg: 'bg-green-500/15', text: 'text-green-300' };
-    if (s >= 2500)  return { bg: 'bg-cyan-500/15', text: 'text-cyan-300' };
-    if (s >= 1000)  return { bg: 'bg-blue-500/15', text: 'text-blue-300' };
-    return { bg: 'bg-white/5', text: 'text-white/70' };
-  } catch (e) { return { bg: 'bg-white/5', text: 'text-white/70' }; }
+// Deterministic muted palette for fallbacks
+const FALLBACK_PALETTE = ['#6BA3BE','#67A7A1','#78B089','#9EB86A','#C1B35F','#C88F63','#C37479','#B07BAF','#8E86C6','#6F94C1','#72A6AE','#8AA0AA'];
+
+function djb2Hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) + str.charCodeAt(i);
+  return h >>> 0;
+}
+
+function hexToRgb(hex) {
+  const m = String(hex).trim().replace('#','');
+  if (m.length === 3) {
+    const r = parseInt(m[0] + m[0], 16);
+    const g = parseInt(m[1] + m[1], 16);
+    const b = parseInt(m[2] + m[2], 16);
+    return { r, g, b };
+  }
+  if (m.length === 6) {
+    const r = parseInt(m.slice(0,2), 16);
+    const g = parseInt(m.slice(2,4), 16);
+    const b = parseInt(m.slice(4,6), 16);
+    return { r, g, b };
+  }
+  return { r: 120, g: 120, b: 120 };
+}
+
+function rgbToHex(r,g,b){
+  const to = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2,'0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+function darken(hex, amount=0.08){
+  const {r,g,b} = hexToRgb(hex);
+  return rgbToHex(r*(1-amount), g*(1-amount), b*(1-amount));
+}
+
+function contrastRatio(hex, text='#FFFFFF'){
+  function lum({r,g,b}){
+    const a = [r,g,b].map(v => { v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); });
+    return 0.2126*a[0] + 0.7152*a[1] + 0.0722*a[2];
+  }
+  const L1 = lum(hexToRgb(text));
+  const L2 = lum(hexToRgb(hex));
+  const lighter = Math.max(L1,L2);
+  const darker  = Math.min(L1,L2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function normalizeLabelFromSteps(steps){
+  const s = Number(steps)||0;
+  if (s >= 1000 && s % 1000 === 0) return (s/1000)+'k';
+  if (s === 2500) return '2.5k';
+  if (s === 5000) return '5k';
+  return String(s);
+}
+
+function colorForMilestone(label, steps, lastColorHex){
+  const colors = (AWARDS_SETTINGS && AWARDS_SETTINGS.milestone_colors) || {};
+  const txt = (AWARDS_SETTINGS && AWARDS_SETTINGS.chip_text_color) || '#FFFFFF';
+  const borderA = Number(AWARDS_SETTINGS && AWARDS_SETTINGS.chip_border_opacity);
+  const keyExact = String(label||'').trim();
+  const keyNorm = normalizeLabelFromSteps(steps);
+
+  let bg = colors[keyExact] || colors[keyNorm] || null;
+  let usedFallback = false;
+  if (!bg) {
+    const palette = FALLBACK_PALETTE;
+    const h = djb2Hash(keyExact || keyNorm);
+    let idx = h % palette.length;
+    bg = palette[idx];
+    usedFallback = true;
+    if (lastColorHex && lastColorHex.toLowerCase() === bg.toLowerCase()) {
+      // rotate to next entry to avoid adjacent duplicate
+      idx = (idx + 1) % palette.length;
+      bg = palette[idx];
+    }
+  }
+
+  // Ensure contrast for white text; darken bg until at least 4.5:1
+  let safeBg = bg;
+  let tries = 0;
+  while (contrastRatio(safeBg, txt) < 4.5 && tries < 6) {
+    safeBg = darken(safeBg, 0.08);
+    tries++;
+  }
+
+  const { r, g, b } = hexToRgb(safeBg);
+  const border = `rgba(${r}, ${g}, ${b}, ${Number.isFinite(borderA) ? borderA : 0.2})`;
+  return { bg: safeBg, text: txt, border, usedFallback };
 }
 
 let stackedChartRef = null;
@@ -718,6 +794,7 @@ export function renderCards(people) {
   const container = document.getElementById('cards');
   container.innerHTML = people.map(p => {
     const badges = [];
+    let lastChipColor = null;
     p.days.forEach((v, idx) => {
       if (!Number.isFinite(v)) return;
       const day = DAY_ORDER[idx];
@@ -735,8 +812,9 @@ export function renderCards(people) {
         if (steps <= 0) return;
         if (v >= steps) {
           const lbl = String(m.label || steps);
-          const cls = badgeClassForSteps(steps);
-          badges.push(`<span class="chip ${cls.bg} ${cls.text}" title="${day}">${lbl}</span>`);
+          const c = colorForMilestone(lbl, steps, lastChipColor);
+          lastChipColor = c.bg;
+          badges.push(`<span class="chip" data-dynamic style="--chip-bg:${c.bg}; --chip-text:${c.text}; --chip-border:${c.border};" title="${day}">${lbl}</span>`);
         }
       });
     });
@@ -750,9 +828,9 @@ export function renderCards(people) {
           const stepsLeft = Math.max(0, Number(p.toNext) || 0);
           const progress = Math.max(0, Math.min(100, Math.round((size - stepsLeft) / size * 100)));
 
-          // derive fill color from first badge text color (e.g. "text-emerald-300" -> "bg-emerald-300")
-          const badgeTextMatch = badges.join(' ').match(/text-([a-z0-9-]+)/);
-          const fillClass = badgeTextMatch ? 'bg-' + badgeTextMatch[1] : 'bg-sky-400';
+          // derive fill color from first badge's background (fallback to sky)
+          const firstBgMatch = badges.join(' ').match(/--chip-bg:([^;]+);/);
+          const fillStyle = firstBgMatch ? `style=\"background-color:${firstBgMatch[1].trim()}\"` : '';
 
           return `<div class="pt-2 border-t border-white/10 text-xs">
             <div class="flex items-center justify-between">
@@ -760,7 +838,7 @@ export function renderCards(people) {
               <div class="text-white/60">${fmt(stepsLeft)} / ${fmt(size)}</div>
             </div>
             <div class="mt-1 h-[2px] w-full bg-white/5 rounded overflow-hidden">
-              <div class="${fillClass} h-[2px]" style="width: ${progress}%;"></div>
+              <div class="h-[2px]" ${fillStyle} style="width: ${progress}%;"></div>
             </div>
           </div>`;
         })()

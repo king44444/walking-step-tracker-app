@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../vendor/autoload.php';
 App\Core\Env::bootstrap(dirname(__DIR__));
 require_once __DIR__ . '/lib/settings.php';
+require_once __DIR__ . '/lib/awards_settings.php';
 
 // Public endpoint: return a small whitelist of settings useful for the public UI.
 // Falls back to site/config.json defaults when DB value missing.
@@ -62,7 +63,14 @@ try {
     }
   }
 
-  echo json_encode(['ok' => true, 'daily_milestones' => $milestones], JSON_UNESCAPED_SLASHES);
+  // Also surface awards_settings so the public UI can colorize milestone chips
+  $awards = awards_settings_load();
+
+  echo json_encode([
+    'ok' => true,
+    'daily_milestones' => $milestones,
+    'awards_settings' => $awards,
+  ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
   http_response_code(500);
   echo json_encode(['error' => 'server_error']);
