@@ -59,6 +59,7 @@ $rank = $higher + 1;
  // Dynamic daily milestones driven by admin setting 'daily.milestones'
  // Read admin setting; fallback to site/config.json public defaults
  require_once __DIR__ . '/../api/lib/settings.php';
+ require_once __DIR__ . '/../api/lib/awards_settings.php';
  $rawMilestones = setting_get('daily.milestones', null);
  if ($rawMilestones && is_string($rawMilestones) && trim($rawMilestones) !== '') {
    $parsedMilestones = json_decode($rawMilestones, true);
@@ -108,14 +109,92 @@ $rank = $higher + 1;
  } 
 
 // small helper to pick chip color classes that match the dashboard JS
-function badge_class_for_steps(int $steps): array {
-  if ($steps >= 30000) return ['bg'=>'bg-emerald-500/15','text'=>'text-emerald-300'];
-  if ($steps >= 20000) return ['bg'=>'bg-yellow-500/15','text'=>'text-yellow-300'];
-  if ($steps >= 15000) return ['bg'=>'bg-lime-500/15','text'=>'text-lime-300'];
-  if ($steps >= 10000) return ['bg'=>'bg-green-500/15','text'=>'text-green-300'];
-  if ($steps >= 2500)  return ['bg'=>'bg-cyan-500/15','text'=>'text-cyan-300'];
-  if ($steps >= 1000)  return ['bg'=>'bg-blue-500/15','text'=>'text-blue-300'];
-  return ['bg'=>'bg-white/5','text'=>'text-white/70'];
+// awards settings for chip colors
+$AWARDS = awards_settings_load();
+
+// Deterministic muted fallback palette (match public JS)
+$FALLBACK_PALETTE = ['#6BA3BE','#67A7A1','#78B089','#9EB86A','#C1B35F','#C88F63','#C37479','#B07BAF','#8E86C6','#6F94C1','#72A6AE','#8AA0AA'];
+
+function hex_to_rgb(string $hex): array {
+  $m = ltrim(trim($hex), '#');
+  if (strlen($m) === 3) {
+    $r = hexdec(str_repeat($m[0],2));
+    $g = hexdec(str_repeat($m[1],2));
+    $b = hexdec(str_repeat($m[2],2));
+    return ['r'=>$r,'g'=>$g,'b'=>$b];
+  }
+  if (strlen($m) === 6) {
+    return ['r'=>hexdec(substr($m,0,2)),'g'=>hexdec(substr($m,2,2)),'b'=>hexdec(substr($m,4,2))];
+  }
+  return ['r'=>120,'g'=>120,'b'=>120];
+}
+
+function rgb_to_hex(int $r,int $g,int $b): string {
+  $cl = function($n){ $n = max(0,min(255,$n)); return str_pad(dechex($n),2,'0',STR_PAD_LEFT); };
+  return '#' . $cl($r) . $cl($g) . $cl($b);
+}
+
+function darken_hex(string $hex, float $amount = 0.08): string {
+  $c = hex_to_rgb($hex);
+  return rgb_to_hex((int)round($c['r']*(1-$amount)), (int)round($c['g']*(1-$amount)), (int)round($c['b']*(1-$amount)));
+}
+
+function rel_luminance(array $rgb): float {
+  $a = [];
+  foreach (['r','g','b'] as $k) {
+    $v = $rgb[$k] / 255;
+    $a[] = ($v <= 0.03928) ? ($v/12.92) : pow(($v+0.055)/1.055, 2.4);
+  }
+  return 0.2126*$a[0] + 0.7152*$a[1] + 0.0722*$a[2];
+}
+
+function contrast_ratio(string $hex1, string $hex2 = '#FFFFFF'): float {
+  $L1 = rel_luminance(hex_to_rgb($hex1));
+  $L2 = rel_luminance(hex_to_rgb($hex2));
+  $lighter = max($L1,$L2); $darker = min($L1,$L2);
+  return ($lighter + 0.05) / ($darker + 0.05);
+}
+
+function normalize_label_from_steps(int $steps): string {
+  if ($steps >= 1000 && $steps % 1000 === 0) return (string)($steps/1000) . 'k';
+  if ($steps === 2500) return '2.5k';
+  if ($steps === 5000) return '5k';
+  return (string)$steps;
+}
+
+function djb2_hash(string $s): int {
+  $h = 5381;
+  $len = strlen($s);
+  for ($i=0; $i<$len; $i++) { $h = (($h << 5) + $h) + ord($s[$i]); }
+  return $h & 0x7fffffff; // unsigned
+}
+
+function chip_color_for_milestone(array $awards, array $fallbackPalette, string $label, int $steps, ?string $lastHex): array {
+  $colors = isset($awards['milestone_colors']) && is_array($awards['milestone_colors']) ? $awards['milestone_colors'] : [];
+  $txt = isset($awards['chip_text_color']) && is_string($awards['chip_text_color']) ? $awards['chip_text_color'] : '#FFFFFF';
+  $borderOpacity = isset($awards['chip_border_opacity']) && is_numeric($awards['chip_border_opacity']) ? (float)$awards['chip_border_opacity'] : 0.2;
+
+  $keyExact = trim((string)$label);
+  $keyNorm = normalize_label_from_steps($steps);
+
+  $bg = $colors[$keyExact] ?? ($colors[$keyNorm] ?? null);
+  if (!$bg) {
+    $h = djb2_hash($keyExact !== '' ? $keyExact : $keyNorm);
+    $idx = $h % max(1, count($fallbackPalette));
+    $bg = $fallbackPalette[$idx] ?? '#6BA3BE';
+    if ($lastHex && strcasecmp($lastHex, $bg) === 0) {
+      $idx = ($idx + 1) % max(1, count($fallbackPalette));
+      $bg = $fallbackPalette[$idx] ?? $bg;
+    }
+  }
+
+  // Ensure contrast with text color
+  $safeBg = $bg; $tries = 0;
+  while (contrast_ratio($safeBg, $txt) < 4.5 && $tries < 6) { $safeBg = darken_hex($safeBg, 0.08); $tries++; }
+
+  $rgb = hex_to_rgb($safeBg);
+  $border = sprintf('rgba(%d, %d, %d, %.3f)', $rgb['r'],$rgb['g'],$rgb['b'],$borderOpacity);
+  return ['bg'=>$safeBg, 'text'=>$txt, 'border'=>$border];
 }
 
 // awards
@@ -208,15 +287,16 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
             <div style="color: rgba(230,236,255,0.6);">No daily milestones configured.</div>
           <?php else: ?>
             <div class="milestones-list rounded-md overflow-hidden">
-              <?php foreach ($milestones as $m):
+              <?php $lastChipColor = null; foreach ($milestones as $m):
                 $steps = (int)$m['steps'];
                 $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
                 $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
-                $cls = badge_class_for_steps($steps);
+                $c = chip_color_for_milestone($AWARDS, $FALLBACK_PALETTE, $label, $steps, $lastChipColor);
+                $lastChipColor = $c['bg'];
               ?>
                 <div class="milestone-row flex items-center justify-between px-2 py-1 md:px-4">
                   <div class="milestone-left flex items-center gap-3">
-                    <span class="chip <?= $cls['bg'] ?> <?= $cls['text'] ?> milestone-label"><?= $label ?></span>
+                    <span class="chip milestone-label" data-dynamic style="--chip-bg: <?= e($c['bg']) ?>; --chip-text: <?= e($c['text']) ?>; --chip-border: <?= e($c['border']) ?>;"><?= $label ?></span>
                     <div class="milestone-count font-semibold"><?= $count ?></div>
                   </div>
                   <div class="milestone-steps text-sm text-white/50"><?= number_format($steps) ?> steps</div>
