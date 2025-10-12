@@ -202,12 +202,23 @@ $aw = $pdo->prepare('SELECT kind, milestone_value, image_path, created_at FROM a
 $aw->execute([':id'=>$id]);
 $awards = $aw->fetchAll(PDO::FETCH_ASSOC);
 
-// photo path (resolve relative under site/assets)
+// photo path (resolve relative under site/assets, avoid double 'assets/')
 $photo = (string)($user['photo_path'] ?? '');
-if ($photo) {
-  if (preg_match('~^https?://~i', $photo)) { $p = parse_url($photo, PHP_URL_PATH) ?: $photo; $photo = $p; }
-  $photo = ltrim(preg_replace('#^site/#','', preg_replace('#^/+#','',$photo)), '/');
-  $photo = 'assets/' . ltrim($photo, '/');
+if ($photo !== '') {
+  // If absolute URL, extract path component
+  if (preg_match('~^https?://~i', $photo)) {
+    $p = parse_url($photo, PHP_URL_PATH) ?: '';
+    $photo = $p;
+  }
+  // Normalize: remove leading slashes and optional leading 'site/'
+  $photo = ltrim($photo, '/');
+  if (strpos($photo, 'site/') === 0) {
+    $photo = substr($photo, 5); // drop 'site/'
+  }
+  // If it doesn't already start with 'assets/', prefix it
+  if (strpos($photo, 'assets/') !== 0) {
+    $photo = 'assets/' . $photo;
+  }
 }
 if ($photo === '') { $photo = 'assets/admin/no-photo.svg'; }
 
