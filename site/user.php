@@ -240,7 +240,12 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?= e($user['name']) ?> — Lifetime</title>
   <link rel="icon" href="../favicon.ico" />
-  <link rel="stylesheet" href="<?= asset($public . '/assets/css/app.css') ?>" />
+  <?php
+    $appCss = $public . '/assets/css/app.css';
+    $appCssFs = __DIR__ . '/../public/assets/css/app.css';
+    $appCssVer = is_readable($appCssFs) ? (string)filemtime($appCssFs) : (string)time();
+  ?>
+  <link rel="stylesheet" href="<?= asset($appCss) ?>?v=<?= e($appCssVer) ?>" />
   <link rel="stylesheet" href="<?= asset($site . '/assets/css/user_awards.css') ?>" />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -303,6 +308,9 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
                 $label = htmlspecialchars($m['label'], ENT_QUOTES, 'UTF-8');
                 $count = isset($milestonesCounts[$steps]) ? number_format((int)$milestonesCounts[$steps]) : '0';
                 $c = chip_color_for_milestone($AWARDS, $FALLBACK_PALETTE, $label, $steps, $lastChipColor);
+                if (empty($c['bg']) || empty($c['text']) || empty($c['border'])) {
+                  error_log('[user.php] Empty chip color fields for label=' . $label . ', steps=' . $steps . ' c=' . json_encode($c));
+                }
                 $lastChipColor = $c['bg'];
               ?>
                 <div class="milestone-row flex items-center justify-between px-2 py-1 md:px-4">
