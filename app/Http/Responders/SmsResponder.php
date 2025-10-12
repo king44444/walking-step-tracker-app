@@ -102,17 +102,32 @@ class SmsResponder
      */
     private static function withReminder(string $message): string
     {
-        $site = self::siteUrl();
+        // Fast-path: allow tests to inject via $_ENV directly
+        $site = isset($_ENV['SITE_URL']) ? (string)$_ENV['SITE_URL'] : '';
+        if ($site === '') {
+            try {
+                $site = self::siteUrl();
+            } catch (\Throwable $e) {
+                // Fail safe: if SITE_URL cannot be resolved, do not append a footer
+                error_log('SmsResponder footer disabled: ' . $e->getMessage());
+                return $message;
+            }
+        }
+        // Normalize trailing slash to exactly one
+        $site = rtrim(trim($site), "/") . "/";
         if ($site === '') return $message;
 
         // If message already contains the site URL (case-insensitive), do not append
         if (stripos($message, $site) !== false) return $message;
+        // Also consider variant without trailing slash to avoid duplicates
+        $siteNoSlash = rtrim($site, '/');
+        if ($siteNoSlash !== '' && stripos($message, $siteNoSlash) !== false) return $message;
 
         // If message already contains the standard hint, avoid duplicate hint
-        $hintPhrase = 'text "info" or "walk" for menu';
+        $hintPhrase = 'text "walk" or "menu" for menu';
         $hasHint = stripos($message, $hintPhrase) !== false;
 
-        $reminder = $hasHint ? " Visit {$site}." : " Visit {$site} — text \"info\" or \"walk\" for menu.";
+        $reminder = $hasHint ? " Visit {$site}." : " Visit {$site} — text \"walk\" or \"menu\" for menu.";
         // Ensure we don't add if message already ends with the same reminder
         if (substr($message, -strlen($reminder)) === $reminder) return $message;
         return rtrim($message) . $reminder;
@@ -123,19 +138,24 @@ class SmsResponder
         static $cached = null;
         // Load lightweight config helpers
         require_once __DIR__ . '/../../../api/lib/config.php';
-        // Always honor explicit env if present (and refresh cache)
+        // 1) Env SITE_URL takes precedence and bypasses cache (tests rely on this)
         $envUrl = (string)env('SITE_URL', '');
-        if ($envUrl !== '') { $cached = $envUrl; return $cached; }
+        if ($envUrl !== '') {
+            return $cached = $envUrl;
+        }
         if ($cached !== null) return $cached;
+
+        // 2) settings.site.url in SQLite
         $url = '';
-        if ($url === '' && function_exists('get_setting')) {
+        if (function_exists('get_setting')) {
             $url = (string)(get_setting('site.url') ?? '');
         }
-        if ($url === '' && function_exists('setting_get')) {
-            // Optional fallback if settings helper is loaded elsewhere
-            try { $url = (string)setting_get('app.public_base_url', '') ?? ''; } catch (\Throwable $e) {}
+
+        // 3) Fail if missing
+        if ($url === '') {
+            throw new \RuntimeException('SITE_URL missing: set SITE_URL in .env or settings.site.url');
         }
-        $cached = $url;
-        return $cached;
+
+        return $cached = $url;
     }
 }

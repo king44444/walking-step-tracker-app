@@ -189,6 +189,13 @@ if (!in_array('interests', $colNames, true)) {
 if (!in_array('rival_id', $colNames, true)) {
   $pdo->exec("ALTER TABLE users ADD COLUMN rival_id INTEGER");
 }
+// SMS reminders support
+if (!in_array('reminders_enabled', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN reminders_enabled INTEGER DEFAULT 0");
+}
+if (!in_array('reminders_when', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN reminders_when TEXT");
+}
 
 // Per-user AI profile table
 $pdo->exec("

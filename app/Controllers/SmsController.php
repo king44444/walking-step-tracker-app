@@ -99,11 +99,11 @@ class SmsController
         $body_upper = strtoupper($body);
 
         // Command handling
-        if ($body_upper === 'HELP') {
-            // Let Twilio handle HELP auto-reply; do not send our menu here
+        if ($body_upper === 'HELP' || $body_upper === 'INFO') {
+            // Let Twilio handle HELP/INFO auto-reply; do not send our menu here
             http_response_code(200);
             return;
-        } elseif ($body_upper === 'INFO' || $body_upper === 'WALK') {
+        } elseif ($body_upper === 'WALK' || $body_upper === 'MENU') {
             $msg = $this->getHelpText($ctx['is_admin']);
             \App\Http\Responders\SmsResponder::ok($msg);
             return;
@@ -301,6 +301,8 @@ class SmsController
         // Bootstrap environment
         require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
         \App\Core\Env::bootstrap(dirname(__DIR__, 2));
+        // Load config helpers (env()) for internal auth
+        require_once dirname(__DIR__, 2) . '/api/lib/config.php';
 
         header('Content-Type: application/json; charset=utf-8');
 
@@ -427,7 +429,7 @@ class SmsController
             "INTERESTS LIST - Show interests",
             "REMINDERS ON|OFF - Toggle reminders",
             "REMINDERS WHEN MORNING|EVENING|HH:MM - Set time",
-            "WALK or INFO - Command list"
+            "WALK or MENU - Command list"
         ];
         if ($isAdmin) {
             $lines[] = "UNDO - Revert last entry (admin only)";

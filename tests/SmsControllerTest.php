@@ -362,15 +362,16 @@ class SmsControllerTest extends TestCase
         $this->assertEquals('07:30', $pdo->query("SELECT reminders_when FROM users WHERE name='Dan'")->fetchColumn());
     }
 
-    public function testHelpTextMentionsWalkOrInfo()
+    public function testHelpTextMentionsWalkOrMenu()
     {
         $rc = new \ReflectionClass(\App\Controllers\SmsController::class);
         $m = $rc->getMethod('getHelpText');
         $m->setAccessible(true);
         $ctrl = new \App\Controllers\SmsController();
         $msg = $m->invoke($ctrl, false);
-        $this->assertStringContainsString('WALK or INFO - Command list', $msg);
-        $this->assertStringNotContainsString('HELP - This message', $msg);
+        $this->assertStringContainsString('WALK or MENU - Command list', $msg);
+        $this->assertStringNotContainsString('INFO -', $msg);
+        $this->assertStringNotContainsString('HELP -', $msg);
     }
 
     public function testRemindersLogTable()

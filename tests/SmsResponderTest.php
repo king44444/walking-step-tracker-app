@@ -12,6 +12,10 @@ class SmsResponderTest extends TestCase
         // Record base buffer level and start one buffer this test will own
         $this->baseObLevel = ob_get_level();
         ob_start();
+        // Ensure SITE_URL is always available for footer in full-suite runs
+        if (!isset($_ENV['SITE_URL'])) {
+            $_ENV['SITE_URL'] = 'https://mikebking.com/dev/html/walk/site/';
+        }
     }
 
     protected function tearDown(): void
@@ -23,6 +27,7 @@ class SmsResponderTest extends TestCase
         // Clear request context between tests
         unset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
         unset($_GET['format']);
+        // Do not unset SITE_URL here; some suites rely on it globally
     }
 
     public function testOkResponseWithTwilioHeaderReturnsXml()
@@ -109,35 +114,66 @@ class SmsResponderTest extends TestCase
     public function testFooterAppendedForPlainNumber()
     {
         $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
-        $_ENV['SITE_URL'] = 'https://example.com/walk';
+        // Use canonical base; normalization should ensure single trailing slash
+        $_ENV['SITE_URL'] = 'https://mikebking.com/dev/html/walk/site';
 
         SmsResponder::ok('Recorded 1,240 for Mike on today.');
         $output = ob_get_clean();
         $this->assertStringContainsString('Recorded 1,240 for Mike on today.', $output);
-        $this->assertStringContainsString('Visit https://example.com/walk', $output);
-        $this->assertStringContainsString('text &quot;info&quot; or &quot;walk&quot; for menu', $output);
+        $this->assertStringContainsString('Visit https://mikebking.com/dev/html/walk/site/', $output);
+        $this->assertStringContainsString('text &quot;walk&quot; or &quot;menu&quot; for menu', $output);
     }
 
     public function testFooterAppendedForDayNumber()
     {
         $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
-        $_ENV['SITE_URL'] = 'https://example.com/walk';
+        $_ENV['SITE_URL'] = 'https://mikebking.com/dev/html/walk/site/';
 
         SmsResponder::ok('Recorded 1,240 for Mike on tuesday.');
         $output = ob_get_clean();
         $this->assertStringContainsString('Recorded 1,240 for Mike on tuesday.', $output);
-        $this->assertStringContainsString('Visit https://example.com/walk', $output);
+        $this->assertStringContainsString('Visit https://mikebking.com/dev/html/walk/site/', $output);
     }
 
     public function testNoDuplicateWhenUrlAlreadyPresent()
     {
         $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
-        $_ENV['SITE_URL'] = 'https://example.com/walk';
+        $_ENV['SITE_URL'] = 'https://mikebking.com/dev/html/walk/site';
 
-        $msg = 'Recorded 1,240 for Mike on today. Visit https://example.com/walk — text "info" or "walk" for menu.';
+        $msg = 'Recorded 1,240 for Mike on today. Visit https://mikebking.com/dev/html/walk/site/ — text "walk" or "menu" for menu.';
         SmsResponder::ok($msg);
         $output = ob_get_clean();
         // The message should not contain the URL twice
-        $this->assertEquals(1, substr_count($output, 'https://example.com/walk'));
+        $this->assertEquals(1, substr_count($output, 'https://mikebking.com/dev/html/walk/site/'));
+    }
+
+    public function testFooterDbFallbackWhenEnvMissing()
+    {
+        $_SERVER['HTTP_X_TWILIO_SIGNATURE'] = 'test_signature';
+        // Ensure SITE_URL resolves empty via env() for this test (override .env)
+        $prev = $_ENV['SITE_URL'] ?? null;
+        $_ENV['SITE_URL'] = '';
+
+        // Define a lightweight pdo() that SmsResponder's config helper will use
+        if (!function_exists('pdo')) {
+            function pdo(): PDO {
+                static $mem = null;
+                if ($mem instanceof PDO) return $mem;
+                $mem = new PDO('sqlite::memory:');
+                $mem->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                $mem->exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)');
+                $stmt = $mem->prepare('INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES(?,?,datetime("now"))');
+                $stmt->execute(['site.url', 'https://example.com/walk/site/']);
+                return $mem;
+            }
+        }
+
+        SmsResponder::ok('Recorded 100 for Test on today.');
+        $output = ob_get_clean();
+        $this->assertStringContainsString('Visit https://example.com/walk/site/', $output);
+        $this->assertStringContainsString('text &quot;walk&quot; or &quot;menu&quot; for menu', $output);
+
+        // Restore env
+        if ($prev === null) unset($_ENV['SITE_URL']); else $_ENV['SITE_URL'] = $prev;
     }
 }

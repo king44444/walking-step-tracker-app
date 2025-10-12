@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="refresh" content="0; url=/site/">
-  <link rel="icon" href="/dev/html/walk/favicon.ico">
+  <meta http-equiv="refresh" content="0; url=site/">
+  <link rel="icon" href="favicon.ico">
   <title>Redirecting…</title>
   <script>
     (function() {
-      var target = "/site/";
-      if (location.pathname !== "/" && !location.pathname.startsWith("/site/")) {
-        // If served from a subpath, build absolute to /site/
-        target = "/site/";
+      var target = "site/";
+      if (!location.pathname.endsWith("/")) {
+        // keep relative; do not force domain-root
+        target = "site/";
       }
       try { window.location.replace(target); } catch (e) { window.location.href = target; }
     })();
@@ -24,7 +24,7 @@
 </head>
 <body>
   <div class="card">
-    Redirecting to <a href="/site/">/site/</a> …
+    Redirecting to <a href="site/">site/</a> …
   </div>
 </body>
 </html>
