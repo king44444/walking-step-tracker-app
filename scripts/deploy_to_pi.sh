@@ -121,8 +121,8 @@ ssh "${PI_USER}@${PI_HOST}" "sudo systemctl restart php8.2-fpm"
 
 # Optional diagnostics (no migration on deploy)
 echo
-echo "DB pragmas (via PHP):"
-curl -sS "http://${PI_HOST}/dev/html/walk/api/db_diag.php" || true
+echo "Quick DB check (weeks):"
+curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
 echo
 echo "Weeks JSON:"
 curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
