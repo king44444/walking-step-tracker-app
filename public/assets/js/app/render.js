@@ -1,4 +1,4 @@
-import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION, DAILY_MILESTONES, AWARDS_SETTINGS } from './config.js';
+import { DAY_ORDER, THIRTY_K_THRESHOLD, CHERYL_THRESHOLD, DAILY_GOAL_15K, DAILY_GOAL_10K, DAILY_GOAL_2_5K, DAILY_GOAL_1K, AWARD_LIMIT, LEVEL_K, LEVEL_P, LEVEL_LABEL, APP_VERSION, DAILY_MILESTONES, AWARDS_SETTINGS, SHOW_NUDGES } from './config.js';
 import { fmt, safe, pickNudge, setStatus } from './utils.js';
 import { fetchFamilyWeekdayAverages } from './api.js';
 
@@ -886,15 +886,14 @@ export function renderMissing(missing) {
   const items = [];
   missing.forEach(m => {
     if (m.blanks.length) {
-      const nudge = pickNudge();
-      items.push(
-        `<li class="flex items-start justify-between gap-2">
-          <div>
-            <span class="font-semibold">${safe(m.name)}</span> missing: ${m.blanks.join(', ')}.
-            <span class="text-white/60 italic ml-1">Nudge: ${safe(nudge)}</span>
-          </div>
-        </li>`
-      );
+      const parts = [
+        `<span class=\"font-semibold\">${safe(m.name)}</span> missing: ${m.blanks.join(', ')}.`
+      ];
+      if (SHOW_NUDGES) {
+        const nudge = pickNudge();
+        parts.push(`<span class=\"text-white/60 italic ml-1\">Nudge: ${safe(nudge)}</span>`);
+      }
+      items.push(`<li class=\"flex items-start justify-between gap-2\"><div>${parts.join(' ')}</div></li>`);
     }
   });
   el.innerHTML = items.length ? items.join('') : '<li>Everyone has reported for all days so far.</li>';

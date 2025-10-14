@@ -1,242 +1,134 @@
-# King Walk Week — Weekly Step Tracker
+# Kings Walk Week — Walk together. Win today.
 
-A lightweight web + SMS app for tracking weekly step counts. Users report daily step totals via SMS (Twilio) or the web UI; the server records entries per week and provides simple reporting and lifetime stats.
+A tiny, joyful, self‑hosted app for running weekly step challenges with your family, friends, or team. It’s SMS‑first (text your steps), privacy‑respecting (SQLite + PHP), and beautiful out of the box.
 
-This repository contains the API (PHP + SQLite), a small single-page frontend, and maintenance/deploy scripts used to run the app on a Raspberry Pi (or other web host).
+Start a week. Text your steps. Watch the live leaderboard, cheer with badges, and snapshot winners. Run it on a Raspberry Pi in your kitchen or any PHP host.
 
----
+— Bring people together around movement — without ads, accounts, or friction.
 
-## Quick start / TL;DR
+## Why you’ll love it
 
-1. Create an environment file for the API: `api/.env.local` (see Configuration below).
-2. Run migrations to create the SQLite DB and schema:
+- Live leaderboard and charts: See totals, averages, best days, and trends in real time.
+- Text-to-log (Twilio): Participants simply text their daily steps — no login.
+- Snapshot weeks: Finalize a week to freeze awards and keep a clean historical record.
+- Delightful awards: Automatic badges for milestones; AI‑ready with graceful local fallback.
+- Private by design: One‑file SQLite database; self‑host on a Pi. Your data, your rules.
+- Zero-config deploy: One script backs up data, syncs, and runs migrations.
+- Strong tests: PHPUnit coverage across SMS flows, awards, and data.
+
+Optional: add your screenshots here to show the leaderboard and awards.
+
+## Quick Start
+
+Requirements
+- PHP 8.2+ with PDO SQLite
+- SQLite3 (bundled with PHP)
+- Composer (vendor already committed, but recommended)
+- (Optional) Twilio account for SMS webhooks
+
+Setup
 ```bash
-php api/migrate.php
+cp .env.example .env
+# Set at least: ADMIN_USER, ADMIN_PASS, APP_ENV=dev
+
+php api/migrate.php            # create the SQLite DB
+php -S localhost:8080 -t public
+# Open http://localhost:8080/site/
 ```
-3. Serve the project for local testing:
+
+First week
+- Use Admin → Weeks to create your first week, or POST to `api/weeks.php` with `action=create&date=YYYY-MM-DD`.
+
+## Features in Detail
+
+- SMS Inbound (Twilio‑ready)
+  - POST `/api/sms` (router) accepts bodies like `12345` or `Tue 12345`.
+  - Rate‑limited per sender; optional signature verification.
+  - Clear responses (“Recorded 12,345 for Mike today.” / helpful errors).
+
+- Public Site
+  - `site/index.html`: live leaderboard, awards, day‑by‑day and trajectory charts.
+  - `site/lifetime.html`: lifetime totals and participation.
+
+- Admin Console
+  - Weeks: create, delete (with force), finalize snapshots.
+  - Entries: quick edit, add all actives to week.
+  - Users: manage profiles, photos, phones (E.164 helper).
+  - AI: approve queue, send, and configure providers.
+
+- Awards & AI
+  - Store badges under `site/assets/awards/{user_id}/...` (relative paths only).
+  - Settings toggles: `ai.enabled`, `ai.award.enabled`, and provider/model.
+  - Graceful fallback to local SVG/WebP when AI isn’t configured.
+
+## Deploy (Raspberry Pi or any PHP host)
+
+Safe, one‑command deploy with backup and migrations:
 ```bash
-php -S localhost:8000 -t .
-# then open http://localhost:8000/site/
+./scripts/deploy_to_pi.sh
 ```
-4. Deploy to the Pi with:
-```bash
-./deploy_to_pi.sh
-```
+What it does
+- Backs up remote `data/` to `backup/` locally (tar or rsync fallback).
+- Rsyncs code (excludes local data, .git, etc.).
+- Ensures `api/data -> ../data` symlink; fixes permissions for `www-data`.
+- Runs `php api/migrate.php` remotely.
+- Preps an Nginx snippet for `/api/*` routing and restarts PHP‑FPM.
 
----
-
-## Repository layout (important files)
-
-- `/api` — PHP backend endpoints and helpers
-  - `api/sms.php` — Twilio SMS webhook (see API section)
-  - `api/sms_status.php`, `api/weeks.php`, `api/data.php`, `api/lifetime.php` — supporting endpoints
-  - `api/migrate.php` — DB migration / schema creation script
-  - `api/db.php` — SQLite connection (data/walkweek.sqlite)
-  - `api/README.md` — Twilio-related docs and signature debug playbook
-  - `api/lib/*` — helper libraries
-- `/site` — frontend static site (HTML, CSS, JS)
-  - `site/config.json` — runtime configuration for goals, thresholds, labels
-  - `site/app/*` — main client code
-- `/scripts` — maintenance and signing helpers
-  - `scripts/backup_db.sh` — DB backup/rotation
-  - `scripts/rotate_audit.php` — prune old audit rows (cron)
-  - `scripts/twilio_sign.py` + `scripts/curl_signed.sh` — helper to send signed test callbacks
-- `deploy_to_pi.sh` — rsync-based deploy script (syncs files, sets permissions, runs migration)
-- `/data` — runtime data (SQLite DB: `data/walkweek.sqlite`)
-- `index.html` — redirects to `/site/`
-
----
-
-## Requirements
-
-- PHP 8+ (for running the API & migrations; recommended to run under PHP-FPM on the Pi)
-- SQLite3 (bundled with PHP PDO SQLite)
-- Python 3 (for `scripts/twilio_sign.py` used in signature tests)
-- curl, rsync, ssh (for deploy script)
-- (Optional) Twilio account for real SMS webhook testing
-
----
+Pro tip: The snippet is generated; include it in your Nginx server block once.
 
 ## Configuration
 
-1. api/.env.local (not committed)
-- Create `api/.env.local` and set environment variables used by the API (example keys):
-  - WALK_TZ (example: `America/Denver`)
-  - TWILIO_AUTH_TOKEN (Twilio auth token — leave empty to disable signature verification)
-- The API code reads these via `api/lib/env.php` / FPM environment when deployed.
+Environment (.env or .env.local at repo root)
+- `APP_ENV=dev|prod` — dev enables friendlier defaults.
+- `ADMIN_USER`, `ADMIN_PASS` — required in prod to protect admin.
+- `DB_PATH` — optional, defaults to `data/walkweek.sqlite`.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — optional; enable SMS sending and signature checks.
+- `CSRF_SECRET` — optional; set for deterministic tokens across restarts.
 
-2. site/config.json (committed)
-- Controls display and gameplay rules (DAILY_GOAL_10K, NUDGES, LEVELS, LIFETIME_STEP_MILESTONES, etc.)
-- See `site/config.json` for current settings; change carefully to affect frontend behavior.
+Public settings (`site/config.json`)
+- Customize day order, goals, nudges, thresholds, award labels, and milestones.
+- Frontend also reads `api/public_settings.php` overrides for milestones and award chips.
 
-3. Database location
-- SQLite DB path is `data/walkweek.sqlite` (created by `api/db.php`).
-- DB connection uses PRAGMA journal_mode=WAL and foreign_keys=ON.
+## Security & Privacy
 
----
+- Admin auth must be configured in production (basic auth over HTTPS).
+- CSRF protection on admin actions; sessions are short‑lived per request.
+- SQLite WAL mode + busy timeouts for resilience on small hardware.
+- No trackers. No external accounts for participants. Own your data.
 
-## Database schema (summary)
+## API Overview
 
-Main tables and notable items (created by `api/migrate.php`):
+- Router endpoints
+  - `POST /api/sms` — inbound steps (Twilio webhook target)
+  - `POST /api/sms/status` — delivery status (Twilio)
+  - `POST /api/send-sms` — admin‑initiated outbound
 
-- `weeks` (week TEXT PK, label, finalized, created_at, finalized_at)
-- `entries` (id, week, name, monday..saturday, sex, age, tag, updated_at)
-  - Additional per-day first-report timestamp columns: `mon_reported_at`, `tue_reported_at`, ... (integer epoch seconds)
-  - Triggers created to set per-day reported_at only on the first non-null positive submission
-  - Unique index on (week, name)
-- `snapshots` (week PK, json, created_at)
-- `users` (id, name, sex, age, tag, phone_e164, ...) — backfilled from entries if missing
-- `sms_audit` (incoming SMS audit log with parsed status)
-- View: `lifetime_stats` — aggregated lifetime totals per active user
+- File endpoints
+  - `api/weeks.php` — list/create/delete weeks
+  - `api/data.php` — current week data (or snapshot)
+  - `api/lifetime.php` — lifetime statistics
+  - `api/award_generate.php` — admin award generation
+  - `api/health.php` — app health + DB check
 
----
+## Develop & Test
 
-## API: endpoints & behavior
-
-See `api/README.md` for Twilio-specific and signature debugging notes.
-
-- `api/sms.php` — Twilio webhook to record steps
-  - Accepts body formats:
-    - `12345`
-    - `Tue 12345` (day override, 3–9 alpha chars)
-  - Validation:
-    - Exactly one numeric group required
-    - Steps must be integer in [0, 200000]
-  - Rate limiting: 60s per phone number (based on recent successful `sms_audit` row)
-  - If `TWILIO_AUTH_TOKEN` is set, verifies Twilio signature; invalid signature => 403
-  - Logs every request to `sms_audit` with a `status` value (ok, bad_signature, rate_limited, unknown_number, invalid_steps, etc.)
-  - Typical responses are plain text (e.g., `Recorded 12,345 for Mike on today.` or `Number not recognized. Ask admin to enroll your phone.`)
-
-- `api/data.php` — returns the currently active week data JSON (or snapshot if week finalized)
-  - Includes `rows` (entries), `firstReports` array, and `lifetimeStart` totals (steps before this week)
-  - `todayIdx` is computed (Mon..Sat => 0..5, Sunday => -1)
-
-- `api/weeks.php` — list of weeks (used by frontend)
-- `api/lifetime.php` — lifetime stats view
-
-- Admin UI (requires basic auth in deploy environment):
-  - `admin/index.php` — admin home and quick actions
-  - `admin/weeks.php` — create/delete/finalize weeks
-  - `admin/entries.php` — edit week entries
-  - `admin/users.php` — manage users and bulk add to week
-  - `admin/phones.php` — enroll/normalize phone numbers (E.164)
-  - `admin/photos.php` — upload/remove user photos
-  - `admin/ai.php` — AI settings, queue, send
-
----
-
-## Running & testing locally
-
-- Create DB and schema:
+Run migrations and tests
 ```bash
 php api/migrate.php
+./vendor/bin/phpunit tests/ --testdox
 ```
 
-- Serve with PHP built-in server for quick testing (not suitable for production):
-```bash
-php -S localhost:8000 -t .
-# then open http://localhost:8000/site/
-```
+Smoke tests and scripts
+- `scripts/test_weeks_api.sh` — quick verify of weeks API (edit BASE if needed).
+- `bin/smoke_sms.sh` — local SMS smoke tests with `SMS_SMOKE_BASE_URL=http://localhost`.
 
-- Test SMS webhook (simple, unsigned):
-```bash
-curl -i http://localhost:8000/api/sms.php \
-  --data-urlencode "From=+18015551234" \
-  --data-urlencode "Body=12345"
-```
+## Call to Action
 
-- Test signed webhook flow (deployment signature helper):
-1. On deploy host (or locally with correct env), set:
-```bash
-export URL="https://<host>/api/sms_status.php"
-export AUTH="<TWILIO_AUTH_TOKEN>"
-./scripts/curl_signed.sh
-```
-2. `scripts/twilio_sign.py` computes the Twilio-like signature for the test payload; `curl_signed.sh` POSTs it with the `X-Twilio-Signature` header.
+- Run a week with your family this month. Share the leaderboard at dinner.
+- Star the repo if you like privacy‑first, feel‑good software.
+- Open an issue with your use‑case — I’d love to hear how you use it.
 
-Signature debug steps are documented in `api/README.md` (diag endpoint `_sig_diag.php` and common mismatch causes).
-
----
-
-## Deployment
-
-The included `deploy_to_pi.sh` performs an rsync to the Pi host configured inside the script, fixes permissions for the web user, and runs `php api/migrate.php` on the remote.
-
-Example (run from project root on the dev machine):
-```bash
-./deploy_to_pi.sh
-```
-
-Notes:
-- The script excludes `.git`, `.DS_Store`, `site/_bak`, and the local `data/walkweek.sqlite` by default.
-- After deploy, migrations run on the Pi to ensure schema and triggers are in place.
-- Ensure SSH/rsync access to the Pi (`PI_HOST`, `PI_USER` inside the script).
-
----
-
-## Maintenance & cron jobs
-
-- Backups: `scripts/backup_db.sh` — zips `data/walkweek.sqlite` into `backup/` and keeps the last 14 zips. Example cron:
-```cron
-@daily /path/to/project/scripts/backup_db.sh
-```
-
-- Audit rotation: `scripts/rotate_audit.php` — deletes `sms_audit` rows older than 90 days. Example cron:
-```cron
-@daily php /path/to/project/scripts/rotate_audit.php
-```
-
-- Signature test helper:
-  - `scripts/twilio_sign.py` and `scripts/curl_signed.sh` — used during signature verification debugging.
-
----
-
-## Security & privacy notes
-
-- Do NOT commit `api/.env.local` or any secrets.
-- Keep `TWILIO_AUTH_TOKEN` secret. If set, Twilio signature verification is enforced.
-- Phone numbers are stored in `users.phone_e164` when enrolled. Use E.164 format when possible.
-- Admin UI for enrolling/normalizing phone numbers is available at `admin/phones.php` (protected by deployment-level auth).
-
----
-
-## Contributing & workflow
-
-- Make changes on a feature branch, test locally, then push and deploy via `deploy_to_pi.sh`.
-- Commit message suggested for README addition:
-```
-git commit -m "Add README.md — project overview, setup, and deployment"
-```
-- The repository remote is `origin: https://github.com/king44444/walking-step-tracker-app.git`.
-
----
-
-## Notes / TODOs
-
-- Consider adding automated tests for parsing/validation logic (sms parsing).
-- Add explicit license file if redistribution is intended.
-- Add CI pipeline to run `php -l` and simple linting on commits.
-
----
-
-## AI Image Awards
-
-Generate and attach award images (badges) for user milestones. Images are stored under `site/assets/awards/{user_id}/` and referenced by pages using relative paths (no domain-root assumptions).
-
-- Storage
-  - Files: `site/assets/awards/{user_id}/{kind}-{milestone}-{YYYYMMDD}.webp|.svg`
-  - DB: `ai_awards.image_path` stores a relative path without the leading `assets/` (e.g., `awards/15/lifetime_steps-100000-20251006.webp`).
-  - Pages under `site/` render via `assets/` prefix (already handled in `site/user.php`).
-
-- Settings
-  - `ai.enabled` — global toggle; when OFF, endpoints return `{ ok:true, skipped:true, reason: "ai.disabled" }`.
-  - `ai.award.enabled` — category toggle; when OFF, endpoints return `{ ok:true, skipped:true, reason: "award.disabled" }`.
-  - `ai.image.provider` — `openrouter` or `local` (default: `local`).
-  - `ai.image.model` — image model (used when provider is not `local`).
-
-- Provider
-  - OpenRouter image generation is abstracted and currently stubbed; when unavailable, the system falls back to a local generator.
-  - Local fallback writes a clean SVG badge and, if GD is available, a WebP raster image.
+— Kings Walk Week: Walk together. Win today.
 
 - Endpoints
   - `POST api/award_generate.php` (admin + CSRF)

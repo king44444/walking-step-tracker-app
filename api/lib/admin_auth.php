@@ -2,12 +2,23 @@
 declare(strict_types=1);
 
 function require_admin(): void {
-  // Read creds from env or .env file if available
-  $user = getenv('ADMIN_USER') ?: '';
-  $pass = getenv('ADMIN_PASS') ?: '';
+  // Read creds from env (Dotenv populates $_ENV). Fallback to getenv for system env.
+  $user = $_ENV['ADMIN_USER'] ?? (getenv('ADMIN_USER') ?: '');
+  $pass = $_ENV['ADMIN_PASS'] ?? (getenv('ADMIN_PASS') ?: '');
+  $appEnv = $_ENV['APP_ENV'] ?? (getenv('APP_ENV') ?: 'prod');
 
-  // If no creds configured, allow all (dev-friendly)
-  if ($user === '' && $pass === '') return;
+  // If no creds configured, only allow in explicit dev/test/local environments.
+  if ($user === '' && $pass === '') {
+    $allowEnvs = ['dev','development','local','test','testing'];
+    if (in_array(strtolower((string)$appEnv), $allowEnvs, true)) {
+      return;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    header('WWW-Authenticate: Basic realm="KW Admin"');
+    http_response_code(401);
+    echo json_encode(['error' => 'admin_auth_not_configured']);
+    exit;
+  }
 
   $gotUser = $_SERVER['PHP_AUTH_USER'] ?? '';
   $gotPass = $_SERVER['PHP_AUTH_PW']   ?? '';

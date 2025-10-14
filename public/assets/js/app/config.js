@@ -26,6 +26,7 @@ export let DAILY_MILESTONES = [];
 export let AWARDS_SETTINGS = { milestone_colors: {}, chip_text_color: '#FFFFFF', chip_border_opacity: 0.2 };
 export let LIFETIME_STEP_MILESTONES = [100000,250000,500000,1000000];
 export let LIFETIME_ATTENDANCE_MILESTONES = [25,50,100];
+export let SHOW_NUDGES = false;
 
 // Compute base URL like: /dev/html/walk/
 export const BASE = (() => {
@@ -68,6 +69,9 @@ export async function loadConfig() {
             chip_text_color: pj.awards_settings.chip_text_color || '#FFFFFF',
             chip_border_opacity: Number.isFinite(Number(pj.awards_settings.chip_border_opacity)) ? Number(pj.awards_settings.chip_border_opacity) : 0.2,
           };
+        }
+        if (pj && typeof pj.show_nudges === 'boolean') {
+          SHOW_NUDGES = !!pj.show_nudges;
         }
       }
     } catch (e) {

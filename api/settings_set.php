@@ -32,6 +32,8 @@ try {
     'ai.nudge.enabled',
     'ai.recap.enabled',
     'ai.award.enabled',
+    // Public UI toggles
+    'ui.nudges.enabled',
     // Award thresholds and labels editable via admin UI
     'thresholds.cheryl',
     'thresholds.thirty_k',

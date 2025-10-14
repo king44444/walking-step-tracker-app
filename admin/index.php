@@ -95,6 +95,15 @@ try {
 
   <div class="grid">
     <div class="card">
+      <h2>Public Dashboard</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label><input type="checkbox" id="uiNudgesChk"> Show nudges in Accountability</label>
+        <button class="btn" id="saveUiBtn" type="button">Save</button>
+      </div>
+      <div id="uiStatus" class="muted"></div>
+    </div>
+
+    <div class="card">
       <h2>Weeks</h2>
       <div class="row" style="margin-bottom:8px">
         <label>Pick:
@@ -212,6 +221,23 @@ try {
 <script>
 (function(){
   const base = '../'; // admin/ -> project root
+  async function loadUiSettings(){
+    const st = document.getElementById('uiStatus'); st.textContent='Loading…';
+    try {
+      const r = await fetch(base+'api/public_settings.php', { cache: 'no-store' });
+      const j = await r.json();
+      document.getElementById('uiNudgesChk').checked = !!(j && j.show_nudges === true);
+      st.textContent = 'Loaded';
+    } catch (e) { st.textContent = 'Failed to load'; }
+  }
+  document.getElementById('saveUiBtn').addEventListener('click', async () => {
+    const on = document.getElementById('uiNudgesChk').checked;
+    const tk = await freshCsrf();
+    try {
+      const res = await fetch(base+'api/settings_set.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF':tk}, body: JSON.stringify({ key: 'ui.nudges.enabled', value: on ? '1' : '0', csrf: tk }) });
+      const ok = res.ok; document.getElementById('uiStatus').textContent = ok ? 'Saved' : 'Failed to save';
+    } catch (e) { document.getElementById('uiStatus').textContent = 'Failed to save'; }
+  });
 
   async function loadWeeks(){
     const s = document.getElementById('weeksStatus'); s.textContent = 'Loading weeks…';
@@ -352,6 +378,7 @@ try {
 
   // Initial
   loadWeeks();
+  loadUiSettings();
   loadAi();
   loadAiLog();
   loadImageModels();

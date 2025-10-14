@@ -5,7 +5,10 @@ use App\Controllers\SmsController;
 
 /** @var Router $router */
 $router->add('GET', '/', fn() => 'OK');
+// Protect debug route behind admin auth
 $router->add('GET', '/api/debug', function() {
+    require_once __DIR__ . '/../api/lib/admin_auth.php';
+    require_admin();
     header('Content-Type: application/json; charset=utf-8');
     return json_encode([
         'method' => $_SERVER['REQUEST_METHOD'] ?? '',

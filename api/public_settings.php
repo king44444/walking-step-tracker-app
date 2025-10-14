@@ -66,10 +66,14 @@ try {
   // Also surface awards_settings so the public UI can colorize milestone chips
   $awards = awards_settings_load();
 
+  // Public UI toggles
+  $nudges = setting_get('ui.nudges.enabled', '0') === '1';
+
   echo json_encode([
     'ok' => true,
     'daily_milestones' => $milestones,
     'awards_settings' => $awards,
+    'show_nudges' => $nudges,
   ], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
   http_response_code(500);
