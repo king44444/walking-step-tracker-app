@@ -86,6 +86,18 @@ Pro tip: The snippet is generated; include it in your Nginx server block once.
   - Run once: `php bin/run_reminders.php`
   - Check: `tail -f data/logs/reminders.log`
 
+Status & Tips
+- The scheduler uses `WALK_TZ`; set it in `.env` (e.g., `America/Denver`).
+- Outbound SMS reads Twilio creds from `$_ENV` and falls back to parsing `.env.local` if needed; keep `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` in `.env.local` on the server.
+- One-per-day per user is enforced via `reminders_log`.
+- Troubleshoot sends with: `sqlite3 data/walkweek.sqlite "SELECT created_at,to_number,http_code,sid,error FROM sms_outbound_audit ORDER BY id DESC LIMIT 10;"`
+
+### Server Secrets (.env.local)
+- The app reads `.env` then `.env.local` (later overrides earlier). Keep production secrets in `.env.local` on the server.
+- The deploy script excludes `.env.local` so your server-only secrets aren’t overwritten.
+- Use `.env.server.example` in the repo as a reference when creating the server’s `.env.local`.
+- If you find a file named `env.local` (without a leading dot), it’s ignored — rename it to `.env.local`.
+
 ## Configuration
 
 Environment (.env or .env.local at repo root)

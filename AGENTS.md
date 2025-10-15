@@ -60,6 +60,27 @@ Notes
 - `Outbound::sendSMS` requires `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` to be set in the PHP-FPM/CLI env (loaded via `.env` with `App\Core\Env::bootstrap`).
 - Reminders are sent only once per user per day (tracked by `reminders_log`). Users with `phone_opted_out=1` are skipped.
 
+### Current Status (Verified)
+- Cron installed for user `mike`: runs every minute.
+- DB tables present: `reminders_log`, `sms_consent_log`; users table has `phone_opted_out`.
+- Scheduler timezone: uses `WALK_TZ` via `now_in_tz()`.
+- Outbound SMS: CLI can read Twilio creds via `$_ENV` or fallback to `.env.local` parse.
+- End-to-end test (Mike) succeeded; one reminder sent and logged.
+
+### Troubleshooting Quick-Checks
+- If `bin/run_reminders.php` says “Failed to send reminder … Missing TWILIO_*”:
+  - Ensure `.env.local` on server includes: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`.
+  - Re-run: `php bin/run_reminders.php` and inspect `sms_outbound_audit`.
+- If no reminders sent at expected time:
+  - Confirm `WALK_TZ` and `users.reminders_when` values match intended local time.
+  - Check cron: `crontab -l` and tail `data/logs/reminders.log`.
+
+## Environment Files & Secrets
+- The app loads `.env` first, then `.env.local` (overrides). Keep server-only secrets in `.env.local` on the server.
+- Deploy script excludes `.env.local` to avoid overwriting secrets during rsync.
+- A template for production/server configuration is provided: `.env.server.example` — copy and edit on the server as `.env.local`.
+- If you see a stray `env.local` (missing leading dot), it is unused. Rename it to `.env.local` or remove it.
+
 ### SSH Debug Commands
 ```bash
 # Connect to server

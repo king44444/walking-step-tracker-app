@@ -6,8 +6,38 @@ use App\Config\DB;
 
 final class Outbound
 {
+    private static function readDotenvValue(string $key): ?string
+    {
+        // Minimal parser: scan .env.local then .env for KEY=value
+        $root = dirname(__DIR__, 2);
+        foreach (['.env.local', '.env'] as $file) {
+            $path = $root . DIRECTORY_SEPARATOR . $file;
+            if (!is_file($path)) continue;
+            $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!is_array($lines)) continue;
+            foreach ($lines as $line) {
+                if (strpos($line, '=') === false) continue;
+                [$k, $v] = explode('=', $line, 2);
+                if ($k === $key) {
+                    $v = trim($v);
+                    if ($v === '') return null;
+                    if ((str_starts_with($v, '"') && str_ends_with($v, '"')) ||
+                        (str_starts_with($v, "'") && str_ends_with($v, "'"))) {
+                        $v = substr($v, 1, -1);
+                    }
+                    return $v;
+                }
+            }
+        }
+        return null;
+    }
     public static function sendSMS(string $to, string $body, array $mediaUrls = []): ?string
     {
+        // Ensure we can read env() as a fallback if Dotenv didn't populate $_ENV
+        $cfgPath = __DIR__ . '/../../api/lib/config.php';
+        if (is_file($cfgPath)) {
+            require_once $cfgPath; // defines env() only if not already defined
+        }
         // Check if recipient has opted out
         $pdo = DB::pdo();
         $stmt = $pdo->prepare("SELECT phone_opted_out FROM users WHERE phone_e164 = ?");
@@ -24,10 +54,14 @@ final class Outbound
             return null; // Block the send
         }
 
-        // Read Twilio credentials from environment (Dotenv populates $_ENV)
-        $accountSid = $_ENV['TWILIO_ACCOUNT_SID'] ?? null;
-        $authToken  = $_ENV['TWILIO_AUTH_TOKEN'] ?? null;
-        $fromNumber = $_ENV['TWILIO_FROM_NUMBER'] ?? null;
+        // Read Twilio credentials: prefer $_ENV (Dotenv), fallback to env() helper which reads .env/.env.local
+        $accountSid = $_ENV['TWILIO_ACCOUNT_SID'] ?? (function_exists('env') ? env('TWILIO_ACCOUNT_SID', null) : null);
+        $authToken  = $_ENV['TWILIO_AUTH_TOKEN']  ?? (function_exists('env') ? env('TWILIO_AUTH_TOKEN', null)  : null);
+        $fromNumber = $_ENV['TWILIO_FROM_NUMBER'] ?? (function_exists('env') ? env('TWILIO_FROM_NUMBER', null) : null);
+        // Fallback: read directly from .env files if still missing
+        if (!$accountSid) $accountSid = self::readDotenvValue('TWILIO_ACCOUNT_SID');
+        if (!$authToken)  $authToken  = self::readDotenvValue('TWILIO_AUTH_TOKEN');
+        if (!$fromNumber) $fromNumber = self::readDotenvValue('TWILIO_FROM_NUMBER');
 
         // Prepare audit insert
         $pdo = DB::pdo();

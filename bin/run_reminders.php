@@ -5,7 +5,8 @@
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 
-// Include required libraries
+// Include required libraries (dates.php first to define env(), then settings.php which honors existing env())
+require_once dirname(__DIR__) . '/api/lib/dates.php';
 require_once dirname(__DIR__) . '/api/lib/settings.php';
 
 use App\Config\DB;
@@ -13,8 +14,8 @@ use App\Services\Outbound;
 
 $pdo = DB::pdo();
 
-// Get current date and time in server timezone
-$now = new DateTime('now', new DateTimeZone(date_default_timezone_get()));
+// Get current date and time in configured WALK_TZ timezone
+$now = now_in_tz();
 $currentDate = $now->format('Y-m-d');
 $currentTime = $now->format('H:i');
 

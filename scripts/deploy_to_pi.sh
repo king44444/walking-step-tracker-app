@@ -46,6 +46,7 @@ rsync -avz --delete \
   --rsync-path="sudo rsync" \
   --exclude '.git' \
   --exclude '.DS_Store' \
+  --exclude '.env.local' \
   --exclude 'site/_bak' \
   --exclude 'backup/' \
   --exclude 'site/assets/awards/' \
