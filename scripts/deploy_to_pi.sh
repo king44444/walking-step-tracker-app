@@ -100,7 +100,7 @@ ssh "${PI_USER}@${PI_HOST}" "sudo bash -lc '
   set -e
   mkdir -p /etc/nginx/snippets
   SNIP=/etc/nginx/snippets/walk_api_routes.conf
-  cat > \"\$SNIP\" <<CONF
+  cat > \"\$SNIP\" <<'CONF'
   # Include this inside the appropriate server { } block
   location ^~ /dev/html/walk/api/ {
       try_files \$uri /dev/html/walk/public/index.php;
