@@ -76,6 +76,16 @@ What it does
 
 Pro tip: The snippet is generated; include it in your Nginx server block once.
 
+**Reminders Scheduler (cron)**
+- Reminders are sent by `bin/run_reminders.php` and require a per-minute cron on the server.
+- Create the log directory and install the cron entry for the deploy user:
+  - `mkdir -p /var/www/public_html/dev/html/walk/data/logs`
+  - `crontab -l 2>/dev/null | grep -q 'bin/run_reminders.php' || (crontab -l 2>/dev/null; echo '*/1 * * * * /usr/bin/php /var/www/public_html/dev/html/walk/bin/run_reminders.php >> /var/www/public_html/dev/html/walk/data/logs/reminders.log 2>&1') | crontab -`
+- Validate quickly:
+  - Set a test time: `php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Mike'\")->execute([$now]); echo \"set $now\\n\";"`
+  - Run once: `php bin/run_reminders.php`
+  - Check: `tail -f data/logs/reminders.log`
+
 ## Configuration
 
 Environment (.env or .env.local at repo root)

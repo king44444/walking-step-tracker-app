@@ -20,6 +20,46 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && curl -s api/weeks.php | jq ."
 ```
 
+## Reminders Scheduler (Cron)
+- The reminder system is driven by `bin/run_reminders.php` and must be scheduled to run every minute.
+- Server log directory: `data/logs` (created automatically in the steps below).
+
+### Install/Verify Cron on Server
+```bash
+# SSH to the server
+ssh mike@192.168.0.103
+cd /var/www/public_html/dev/html/walk
+
+# Ensure log directory exists
+mkdir -p data/logs
+
+# Add a per-minute cron to run reminders (user crontab)
+crontab -l 2>/dev/null | grep -q 'bin/run_reminders.php' || \
+  (crontab -l 2>/dev/null; echo '*/1 * * * * /usr/bin/php /var/www/public_html/dev/html/walk/bin/run_reminders.php >> /var/www/public_html/dev/html/walk/data/logs/reminders.log 2>&1') | crontab -
+
+# Confirm entry exists
+crontab -l | sed -n '1,200p'
+
+# Tail logs
+tail -f data/logs/reminders.log
+```
+
+### Manual Validation
+```bash
+# Force Mike's reminder to current minute and enable
+php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Mike'\")->execute([$now]); echo \"set $now\\n\";"
+
+# Run the scheduler once
+php bin/run_reminders.php
+
+# Inspect outbound audit for errors
+php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); foreach($pdo->query(\"SELECT created_at,to_number,http_code,sid,error FROM sms_outbound_audit ORDER BY id DESC LIMIT 10\") as $r){echo json_encode($r),PHP_EOL;}"
+```
+
+Notes
+- `Outbound::sendSMS` requires `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` to be set in the PHP-FPM/CLI env (loaded via `.env` with `App\Core\Env::bootstrap`).
+- Reminders are sent only once per user per day (tracked by `reminders_log`). Users with `phone_opted_out=1` are skipped.
+
 ### SSH Debug Commands
 ```bash
 # Connect to server

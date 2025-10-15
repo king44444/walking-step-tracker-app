@@ -189,6 +189,10 @@ if (!in_array('interests', $colNames, true)) {
 if (!in_array('rival_id', $colNames, true)) {
   $pdo->exec("ALTER TABLE users ADD COLUMN rival_id INTEGER");
 }
+// STOP/START compliance: ensure phone_opted_out exists
+if (!in_array('phone_opted_out', $colNames, true)) {
+  $pdo->exec("ALTER TABLE users ADD COLUMN phone_opted_out INTEGER DEFAULT 0");
+}
 // SMS reminders support
 if (!in_array('reminders_enabled', $colNames, true)) {
   $pdo->exec("ALTER TABLE users ADD COLUMN reminders_enabled INTEGER DEFAULT 0");
@@ -368,6 +372,30 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS sms_outbound_audit(
   sid TEXT,
   error TEXT
 )");
+
+// Reminders log (prevent duplicate daily sends)
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS reminders_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  sent_on_date TEXT NOT NULL,
+  when_sent TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+)
+");
+
+// SMS consent log (STOP/START tracking)
+$pdo->exec("
+CREATE TABLE IF NOT EXISTS sms_consent_log (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  phone_number TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+)
+");
 
 /* Backfill users from distinct entry names, if not already present */
 $pdo->exec("
