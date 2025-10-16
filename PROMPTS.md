@@ -85,7 +85,7 @@ Act mode:
 •Respect sms.inbound_rate_window_sec indirectly by spacing sends; limit one reminder per user per day; store a reminders_log row to enforce.
 •Add reminders_log(user_id, sent_on_date, when).
 •Message:
-•Template key REMINDER: "Reminder to report steps. Reply with a number or HELP."
+•Template key REMINDER: "Reminder to report steps. Reply with a number or MENU."
 •STOP/START:
 •Ensure outbound send path blocks if user opted out.
 •Record STOP/START in sms_consent_log.

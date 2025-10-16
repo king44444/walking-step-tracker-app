@@ -81,6 +81,29 @@ Notes
 - A template for production/server configuration is provided: `.env.server.example` — copy and edit on the server as `.env.local`.
 - If you see a stray `env.local` (missing leading dot), it is unused. Rename it to `.env.local` or remove it.
 
+## Nginx Snippet Gotcha (Important)
+- Problem observed: Writing the `/etc/nginx/snippets/walk_api_routes.conf` via a remote heredoc without proper quoting caused `$` variables to expand to empty (e.g., `try_files $uri …` became `try_files  …`). Nginx failed `nginx -t` and the server went down.
+- Correct ways to write the snippet (preserve `$` variables):
+  - Use a single-quoted heredoc on the remote host: `<<'CONF'` (note the quotes around CONF).
+  - Or use `printf` with escaped dollars: `\$uri`, `\$query_string`, etc., piped to `sudo tee`.
+- Always validate before restart:
+  - `sudo nginx -t` (must be successful)
+  - `sudo systemctl restart nginx`
+- Minimal working snippet content:
+  ```nginx
+  # Include this inside the appropriate server { } block
+  location ^~ /dev/html/walk/api/ {
+      try_files $uri /dev/html/walk/public/index.php;
+      include fastcgi_params;
+      fastcgi_param SCRIPT_FILENAME /var/www/public_html/dev/html/walk/public/index.php;
+      fastcgi_param QUERY_STRING $query_string;
+      fastcgi_param REQUEST_METHOD $request_method;
+      fastcgi_param CONTENT_TYPE $content_type;
+      fastcgi_param CONTENT_LENGTH $content_length;
+      fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+  }
+  ```
+
 ### SSH Debug Commands
 ```bash
 # Connect to server

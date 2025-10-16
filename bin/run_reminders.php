@@ -57,7 +57,7 @@ foreach ($users as $user) {
 
     if ($shouldSend) {
         // Send reminder
-        $message = "Reminder to report steps. Reply with a number or HELP.";
+        $message = "Reminder to report steps. Reply with a number or MENU.";
         $sid = Outbound::sendSMS($phone, $message);
 
         if ($sid !== null) {
