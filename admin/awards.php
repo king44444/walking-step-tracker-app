@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 require_once __DIR__ . '/../api/lib/admin_auth.php';
+require_once __DIR__ . '/../api/lib/settings.php';
+require_once __DIR__ . '/../api/lib/awards.php';
 require_admin();
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 $csrf = \App\Security\Csrf::token();
@@ -44,6 +46,27 @@ try {
   $users = [];
   $awards = [];
 }
+
+$defaultLifetime = '100000,250000,500000,750000,1000000';
+$defaultAttendance = '25,50,100';
+$milestonesLifetime = parse_milestones_string($defaultLifetime);
+$milestonesAttendance = parse_milestones_string($defaultAttendance);
+try {
+  $milestonesLifetime = parse_milestones_string((string)setting_get('milestones.lifetime_steps', $defaultLifetime));
+  $milestonesAttendance = parse_milestones_string((string)setting_get('milestones.attendance_weeks', $defaultAttendance));
+} catch (Throwable $e) {
+  // ignore and fallback to defaults defined above
+}
+$awardSettings = [
+  'milestones' => [
+    'lifetime_steps' => $milestonesLifetime,
+    'attendance_weeks' => $milestonesAttendance,
+  ],
+  'kindMap' => [
+    'Lifetime Steps' => 'lifetime_steps',
+    'Attendance Weeks' => 'attendance_weeks',
+  ],
+];
 
 ?><!doctype html>
 <html lang="en">
@@ -91,6 +114,12 @@ try {
     .img-thumb { width:40px; height:40px; border-radius:6px; object-fit:cover; border:1px solid rgba(255,255,255,0.1); }
     .full-width { grid-column: 1 / -1; }
   </style>
+  <script>
+    window.AWARD_SETTINGS = <?= json_encode(
+      $awardSettings,
+      JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+    ) ?>;
+  </script>
 </head>
 <body>
 <div class="wrap">
@@ -157,7 +186,9 @@ try {
         </label>
         <label style="flex:1">
           Milestone:
-          <input id="genValue" type="number" min="1" placeholder="100000" style="width:100%">
+          <select id="milestoneSelect" class="form-control" style="width:100%"></select>
+          <input type="number" id="milestoneFallback" class="form-control" min="1" placeholder="100000" style="width:100%;display:none">
+          <input type="hidden" id="genValue">
         </label>
       </div>
       <div class="row" style="margin-bottom:8px">
@@ -323,6 +354,69 @@ async function freshCsrf() {
     return (j && j.token) ? String(j.token) : CSRF;
   } catch(e) { return CSRF; }
 }
+
+const milestoneSelect = document.getElementById('milestoneSelect');
+const milestoneFallback = document.getElementById('milestoneFallback');
+const milestoneValueField = document.getElementById('genValue');
+const kindSelect = document.getElementById('genKind');
+
+function populateMilestones() {
+  if (!milestoneSelect || !milestoneFallback || !milestoneValueField || !kindSelect) return;
+  const settings = window.AWARD_SETTINGS || {};
+  const selectedOption = kindSelect.options && kindSelect.selectedIndex >= 0 ? kindSelect.options[kindSelect.selectedIndex] : null;
+  const kindLabel = selectedOption ? selectedOption.text.trim() : '';
+  const key = settings.kindMap && kindLabel ? settings.kindMap[kindLabel] : undefined;
+  const rawList = key && settings.milestones ? settings.milestones[key] : undefined;
+  const list = Array.isArray(rawList) ? rawList.filter((n) => Number.isFinite(Number(n))) : [];
+  const previousValue = milestoneValueField.value;
+
+  if (list.length > 0) {
+    milestoneSelect.style.display = '';
+    milestoneFallback.style.display = 'none';
+    milestoneSelect.innerHTML = '';
+    let preserved = false;
+    list.forEach((value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return;
+      const strValue = String(num);
+      const option = document.createElement('option');
+      option.value = strValue;
+      option.textContent = num.toLocaleString();
+      if (previousValue && strValue === previousValue) {
+        option.selected = true;
+        preserved = true;
+      }
+      milestoneSelect.appendChild(option);
+    });
+    if (!preserved && milestoneSelect.options.length > 0) {
+      milestoneSelect.selectedIndex = 0;
+    }
+    milestoneValueField.value = milestoneSelect.value || '';
+  } else {
+    milestoneSelect.style.display = 'none';
+    milestoneFallback.style.display = '';
+    if (!milestoneFallback.value && previousValue) {
+      milestoneFallback.value = previousValue;
+    }
+    milestoneValueField.value = milestoneFallback.value || '';
+  }
+}
+
+if (kindSelect) {
+  kindSelect.addEventListener('change', populateMilestones);
+}
+if (milestoneSelect) {
+  milestoneSelect.addEventListener('change', () => {
+    milestoneValueField.value = milestoneSelect.value || '';
+  });
+}
+if (milestoneFallback) {
+  milestoneFallback.addEventListener('input', () => {
+    milestoneValueField.value = milestoneFallback.value || '';
+  });
+}
+
+populateMilestones();
 
  // Generate single award
 document.getElementById('genBtn').addEventListener('click', async () => {
