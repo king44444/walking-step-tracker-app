@@ -388,21 +388,20 @@
 /* Responsive adjustments for narrow screens (<768px) */
 @media (max-width: 768px) {
   .milestone-row {
-    flex-wrap: wrap;
-    align-items: flex-start;
-    padding: 6px 10px;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
   }
   .milestone-left {
-    width: 100%;
+    flex: 0 1 auto;
     gap: 0.5rem;
-    margin-bottom: 4px;
   }
   .milestone-steps {
-    width: 100%;
-    text-align: left;
-    margin-top: 0;
+    flex: 1 1 auto;
+    margin-left: auto;
+    text-align: right;
     opacity: 0.8;
-    font-size: 0.85rem;
   }
   .milestone-count {
     font-size: 0.95rem;

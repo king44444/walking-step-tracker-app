@@ -173,7 +173,7 @@ SMS_SMOKE_BASE_URL=http://localhost ./bin/smoke_sms.sh
 ## API Contracts
 - `api/weeks.php`: GET returns `{ok, weeks[]}`, POST `action=create|delete`
 - `api/data.php`: Returns week data with normalization
-- SMS endpoints: `api/sms.php`, `api/send_sms.php`, `api/sms_status.php` (deprecated - use router `/api/...` instead; these delegate to SmsController and will be removed)
+- SMS endpoints (router): `/api/sms`, `/api/send-sms`, `/api/sms/status`
 - Award generation: `api/award_generate.php` (admin only)
 
 ## Database & Migrations
