@@ -5,7 +5,6 @@ require_once __DIR__ . '/../vendor/autoload.php';
 \App\Core\Env::bootstrap(dirname(__DIR__));
 require_once __DIR__ . '/../api/lib/admin_auth.php';
 require_once __DIR__ . '/../api/lib/settings.php';
-require_once __DIR__ . '/../api/lib/awards.php';
 require_admin();
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 $csrf = \App\Security\Csrf::token();
@@ -47,13 +46,26 @@ try {
   $awards = [];
 }
 
+function parse_milestone_list(string $raw, string $fallback): array {
+  $src = trim($raw) !== '' ? $raw : $fallback;
+  $parts = array_filter(array_map('trim', explode(',', $src)), fn($x) => $x !== '');
+  $nums = [];
+  foreach ($parts as $p) {
+    $n = (int)$p;
+    if ($n > 0) $nums[] = $n;
+  }
+  $nums = array_values(array_unique($nums));
+  sort($nums, SORT_NUMERIC);
+  return $nums;
+}
+
 $defaultLifetime = '100000,250000,500000,750000,1000000';
 $defaultAttendance = '25,50,100';
-$milestonesLifetime = parse_milestones_string($defaultLifetime);
-$milestonesAttendance = parse_milestones_string($defaultAttendance);
+$milestonesLifetime = parse_milestone_list('', $defaultLifetime);
+$milestonesAttendance = parse_milestone_list('', $defaultAttendance);
 try {
-  $milestonesLifetime = parse_milestones_string((string)setting_get('milestones.lifetime_steps', $defaultLifetime));
-  $milestonesAttendance = parse_milestones_string((string)setting_get('milestones.attendance_weeks', $defaultAttendance));
+  $milestonesLifetime = parse_milestone_list((string)setting_get('milestones.lifetime_steps', $defaultLifetime), $defaultLifetime);
+  $milestonesAttendance = parse_milestone_list((string)setting_get('milestones.attendance_weeks', $defaultAttendance), $defaultAttendance);
 } catch (Throwable $e) {
   // ignore and fallback to defaults defined above
 }
