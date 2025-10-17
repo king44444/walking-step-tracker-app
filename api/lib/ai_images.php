@@ -41,7 +41,7 @@ function ai_image_can_generate(): bool {
  * - user_name (string) Required: used in prompt/text
  * - award_kind (string) Required: e.g., lifetime_steps
  * - milestone_value (int) Required
- * - style (string) Optional: badge|medal|ribbon (default badge)
+ * - user (array) Optional: enriched user profile used for personalization
  * - force (bool) Optional: when true, bypass 24h reuse
  *
  * Returns:
@@ -54,7 +54,6 @@ function ai_image_generate(array $opts): array {
   $userName = trim((string)($opts['user_name'] ?? ''));
   $kind = trim((string)($opts['award_kind'] ?? ''));
   $milestone = (int)($opts['milestone_value'] ?? 0);
-  $style = (string)($opts['style'] ?? 'badge');
   $force = (bool)($opts['force'] ?? false);
 
   if ($uid <= 0 || $userName === '' || $kind === '' || $milestone <= 0) {
@@ -85,14 +84,15 @@ function ai_image_generate(array $opts): array {
   }
 
   $label = award_label($kind, $milestone);
-  
-  // Detect lifetime awards and use enhanced prompt
-  $isLifetime = (stripos($kind, 'lifetime') !== false) || ($milestone >= 100000);
-  if ($isLifetime && isset($opts['user'])) {
-    $prompt = build_lifetime_award_prompt($opts['user'], $label, $milestone);
+  $userData = $opts['user'] ?? null;
+  if (!is_array($userData)) {
+    $userData = ['name' => $userName];
   } else {
-    $prompt = build_award_prompt($userName, $label, $milestone, $style);
+    if (!isset($userData['name']) || trim((string)$userData['name']) === '') {
+      $userData['name'] = $userName;
+    }
   }
+  $prompt = build_lifetime_award_prompt($userData, $label, $milestone);
   
   $provider = strtolower((string)setting_get('ai.image.provider', 'local'));
   $model = (string)setting_get('ai.image.model', '');
@@ -151,7 +151,7 @@ function ai_image_generate(array $opts): array {
   }
 
   // Local fallback: write SVG + optional GD raster (WebP)
-  $svg = ai_image_svg_badge($userName, $label, $milestone, $style);
+  $svg = ai_image_svg_badge($userName, $label, $milestone);
   $svgAbs = $dirAbs . '/' . $fileBase . '.svg';
   $okSvg = @file_put_contents($svgAbs, $svg) !== false;
 
@@ -306,41 +306,6 @@ function ai_image_slug(string $s): string {
   return trim($s, '-');
 }
 
-function build_award_prompt(string $userName, string $awardLabel, int $milestone, string $style): string {
-  $promptsJson = setting_get('ai.image.prompts.regular', '');
-  if ($promptsJson) {
-    try {
-      $prompts = json_decode($promptsJson, true);
-      if (is_array($prompts)) {
-        $enabledPrompts = array_filter($prompts, fn($p) => ($p['enabled'] ?? true));
-        if (!empty($enabledPrompts)) {
-          $selectedPrompt = $enabledPrompts[array_rand($enabledPrompts)];
-          $text = $selectedPrompt['text'] ?? '';
-          if ($text) {
-            // Replace placeholders
-            $text = str_replace('{userName}', $userName, $text);
-            $text = str_replace('{awardLabel}', $awardLabel, $text);
-            $text = str_replace('{milestone}', number_format($milestone), $text);
-            return $text;
-          }
-        }
-      }
-    } catch (Throwable $e) {
-      // Fall through to fallback
-    }
-  }
-
-  // Fallback to original hardcoded prompt
-  $style = in_array($style, ['badge','medal','ribbon'], true) ? $style : 'badge';
-  return sprintf(
-    'Create a flat, minimalist %s icon for %s achieving %s (%s). Use a dark blue background, crisp edges, and readable text. No faces. Square 512x512.',
-    $style,
-    $userName,
-    $awardLabel,
-    number_format($milestone)
-  );
-}
-
 /**
  * Build enhanced prompt for lifetime step awards based on user interests.
  * Randomly selects ONE interest from comma-separated list.
@@ -438,7 +403,7 @@ function ai_image_recent_existing(int $uid, string $kind, int $milestone, int $w
   return null;
 }
 
-function ai_image_svg_badge(string $userName, string $label, int $milestone, string $style): string {
+function ai_image_svg_badge(string $userName, string $label, int $milestone): string {
   $title = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
   $user = htmlspecialchars($userName, ENT_QUOTES, 'UTF-8');
   $miles = number_format($milestone);

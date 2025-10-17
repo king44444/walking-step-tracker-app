@@ -39,23 +39,6 @@ function settings_seed_defaults(PDO $pdo): void {
     'sms.admin_password' => '',
     'sms.undo_enabled' => '0',
     'app.public_base_url' => '',
-    'ai.image.prompts.regular' => json_encode([
-      [
-        'name' => 'Classic Badge',
-        'text' => 'Create a flat, minimalist badge icon for {userName} achieving {awardLabel} ({milestone}). Use a dark blue background, crisp edges, and readable text. No faces. Square 512x512.',
-        'enabled' => true
-      ],
-      [
-        'name' => 'Modern Medal',
-        'text' => 'Design a contemporary medal-style award for {userName} reaching {awardLabel} ({milestone}). Clean geometric design with metallic accents. Square 512x512.',
-        'enabled' => true
-      ],
-      [
-        'name' => 'Achievement Ribbon',
-        'text' => 'Create an elegant ribbon award design celebrating {userName}\'s {awardLabel} milestone ({milestone}). Flowing ribbon style with achievement symbolism. Square 512x512.',
-        'enabled' => true
-      ]
-    ]),
     'ai.image.prompts.lifetime' => json_encode([
       [
         'name' => 'Epic Achievement',

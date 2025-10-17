@@ -49,7 +49,7 @@ try {
   $totalMissing = (int)$stCount->fetchColumn();
 
   // Now fetch limited batch to process
-  $sql = 'SELECT a.user_id, a.kind, a.milestone_value, u.name FROM ai_awards a JOIN users u ON u.id = a.user_id WHERE (a.image_path IS NULL OR a.image_path = "")';
+  $sql = 'SELECT a.user_id, a.kind, a.milestone_value, u.name, u.interests FROM ai_awards a JOIN users u ON u.id = a.user_id WHERE (a.image_path IS NULL OR a.image_path = "")';
   $params = [];
   if ($kindFilter !== '') { $sql .= ' AND a.kind = :k'; $params[':k'] = $kindFilter; }
   $sql .= ' ORDER BY a.created_at ASC LIMIT ' . $limit;
@@ -60,10 +60,21 @@ try {
   foreach ($rows as $r) {
     $uid = (int)$r['user_id'];
     $name = (string)$r['name'];
+    $userData = ['name' => $name];
+    if (array_key_exists('interests', $r)) {
+      $userData['interests'] = $r['interests'];
+    }
     $kind = (string)$r['kind'];
     $val = (int)$r['milestone_value'];
     try {
-      $res = ai_image_generate(['user_id'=>$uid,'user_name'=>$name,'award_kind'=>$kind,'milestone_value'=>$val,'style'=>'badge','force'=>false]);
+      $res = ai_image_generate([
+        'user_id' => $uid,
+        'user_name' => $name,
+        'user' => $userData,
+        'award_kind' => $kind,
+        'milestone_value' => $val,
+        'force' => false,
+      ]);
       if (($res['ok'] ?? false) !== true) { $err++; continue; }
       $retPath = (string)$res['path'];
       $storePath = preg_replace('#^assets/#', '', $retPath);

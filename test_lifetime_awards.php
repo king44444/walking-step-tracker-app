@@ -34,7 +34,6 @@ for ($i = 1; $i <= 3; $i++) {
         'user' => $testUser,
         'award_kind' => 'lifetime_steps',
         'milestone_value' => 100000,
-        'style' => 'badge',
         'force' => true
     ]);
     
@@ -66,7 +65,6 @@ foreach ($milestones as $milestone) {
         'user' => $testUser,
         'award_kind' => 'lifetime_steps',
         'milestone_value' => $milestone,
-        'style' => 'badge',
         'force' => true
     ]);
     
@@ -99,7 +97,6 @@ $result = ai_image_generate([
     'user' => $testUser2,
     'award_kind' => 'lifetime_steps',
     'milestone_value' => 150000,
-    'style' => 'badge',
     'force' => true
 ]);
 

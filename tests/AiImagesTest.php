@@ -27,7 +27,6 @@ final class AiImagesTest extends TestCase
             'user_name' => 'Test User',
             'award_kind' => 'lifetime_steps',
             'milestone_value' => 100000,
-            'style' => 'badge',
             'force' => true,
         ]);
         $this->assertIsArray($res);
@@ -51,4 +50,3 @@ final class AiImagesTest extends TestCase
         setting_set('ai.award.enabled', '1'); // restore
     }
 }
-

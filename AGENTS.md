@@ -132,7 +132,13 @@ require 'api/lib/settings.php';
 require 'api/lib/ai_images.php';
 \App\Core\Env::bootstrap('.');
 use \App\Config\DB;
-$result = ai_image_generate(['user_id' => 1, 'user_name' => 'Test', 'award_kind' => 'weekly_steps', 'milestone_value' => 10000]);
+$result = ai_image_generate([
+    'user_id' => 1,
+    'user_name' => 'Test',
+    'user' => ['name' => 'Test', 'interests' => 'Running, Art'],
+    'award_kind' => 'lifetime_steps',
+    'milestone_value' => 100000
+]);
 echo 'Result: ' . ($result['ok'] ? 'SUCCESS' : 'FAILED') . PHP_EOL;
 if ($result['ok']) echo 'Path: ' . $result['path'] . PHP_EOL;
 "

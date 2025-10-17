@@ -115,17 +115,7 @@ $csrf = \App\Security\Csrf::token();
 
   <div class="card">
     <h2 style="margin:0 0 8px 0">AI Image Prompts</h2>
-    <div class="muted" style="margin-bottom:8px">Manage prompts used for generating award images. Prompts are randomly selected from enabled ones.</div>
-
-    <div style="margin-bottom:16px">
-      <h3 style="margin:0 0 8px 0">Regular Award Prompts</h3>
-      <div id="regularPromptsList" style="margin-bottom:8px"></div>
-      <div class="row">
-        <button class="btn" id="addRegularPromptBtn">Add Regular Prompt</button>
-        <button class="btn" id="saveRegularPromptsBtn">Save Regular Prompts</button>
-        <span id="regularPromptsStatus" class="muted"></span>
-      </div>
-    </div>
+    <div class="muted" style="margin-bottom:8px">Manage lifetime award prompts used for generating celebratory images. Prompts are randomly selected from enabled ones.</div>
 
     <div style="margin-bottom:16px">
       <h3 style="margin:0 0 8px 0">Lifetime Award Prompts</h3>
@@ -138,7 +128,7 @@ $csrf = \App\Security\Csrf::token();
     </div>
 
     <div class="muted" style="margin-top:8px">
-      Placeholders: {userName}, {awardLabel}, {milestone}, {interestText} (lifetime only), {styleHint} (lifetime only)
+      Placeholders: {userName}, {awardLabel}, {milestone}, {interestText}, {styleHint}
     </div>
   </div>
 
@@ -334,7 +324,6 @@ $csrf = \App\Security\Csrf::token();
   });
 
   // AI Image Prompts functionality
-  let regularPrompts = [];
   let lifetimePrompts = [];
 
   async function loadPrompts(){
@@ -342,98 +331,69 @@ $csrf = \App\Security\Csrf::token();
       const res = await fetch(base + 'api/settings_get.php', { cache:'no-store' });
       const settings = await res.json();
 
-      const regularJson = settings['ai.image.prompts.regular'] || '[]';
       const lifetimeJson = settings['ai.image.prompts.lifetime'] || '[]';
-
-      regularPrompts = JSON.parse(regularJson) || [];
       lifetimePrompts = JSON.parse(lifetimeJson) || [];
 
-      renderPrompts('regular', regularPrompts);
-      renderPrompts('lifetime', lifetimePrompts);
+      renderLifetimePrompts();
     } catch (e) {
       console.error('loadPrompts error', e);
     }
   }
 
-  function renderPrompts(type, prompts){
-    const container = document.getElementById(type + 'PromptsList');
+  function renderLifetimePrompts(){
+    const container = document.getElementById('lifetimePromptsList');
     container.innerHTML = '';
 
-    if (prompts.length === 0) {
+    if (lifetimePrompts.length === 0) {
       container.innerHTML = '<div class="muted">No prompts configured</div>';
       return;
     }
 
-    prompts.forEach((prompt, index) => {
+    lifetimePrompts.forEach((prompt, index) => {
       const div = document.createElement('div');
       div.style.cssText = 'background:#07102a;border:1px solid #1e2a5a;border-radius:8px;padding:12px;margin-bottom:8px;';
       div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
           <div style="flex:1;">
             <strong>${prompt.name || 'Unnamed'}</strong>
-            <label style="margin-left:12px;"><input type="checkbox" ${prompt.enabled !== false ? 'checked' : ''} onchange="togglePrompt('${type}', ${index})"> Enabled</label>
+            <label style="margin-left:12px;"><input type="checkbox" ${prompt.enabled !== false ? 'checked' : ''} onchange="toggleLifetimePrompt(${index})"> Enabled</label>
           </div>
-          <button class="btn warn" onclick="deletePrompt('${type}', ${index})" style="font-size:12px;padding:4px 8px;">Delete</button>
+          <button class="btn warn" onclick="deleteLifetimePrompt(${index})" style="font-size:12px;padding:4px 8px;">Delete</button>
         </div>
-        <textarea style="width:100%;min-height:80px;background:#111936;color:#e6ecff;border:1px solid #1e2a5a;padding:8px;border-radius:4px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" onchange="updatePromptText('${type}', ${index}, this.value)">${prompt.text || ''}</textarea>
-        <input type="text" placeholder="Prompt name" style="width:100%;background:#111936;color:#e6ecff;border:1px solid #1e2a5a;padding:4px 8px;border-radius:4px;margin-top:4px;" value="${prompt.name || ''}" onchange="updatePromptName('${type}', ${index}, this.value)">
+        <textarea style="width:100%;min-height:80px;background:#111936;color:#e6ecff;border:1px solid #1e2a5a;padding:8px;border-radius:4px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" onchange="updateLifetimePromptText(${index}, this.value)">${prompt.text || ''}</textarea>
+        <input type="text" placeholder="Prompt name" style="width:100%;background:#111936;color:#e6ecff;border:1px solid #1e2a5a;padding:4px 8px;border-radius:4px;margin-top:4px;" value="${prompt.name || ''}" onchange="updateLifetimePromptName(${index}, this.value)">
       `;
       container.appendChild(div);
     });
   }
 
-  window.togglePrompt = function(type, index){
-    const prompts = type === 'regular' ? regularPrompts : lifetimePrompts;
-    if (prompts[index]) {
-      prompts[index].enabled = !prompts[index].enabled;
+  window.toggleLifetimePrompt = function(index){
+    if (lifetimePrompts[index]) {
+      lifetimePrompts[index].enabled = !lifetimePrompts[index].enabled;
     }
   };
 
-  window.deletePrompt = function(type, index){
+  window.deleteLifetimePrompt = function(index){
     if (!confirm('Delete this prompt?')) return;
-    const prompts = type === 'regular' ? regularPrompts : lifetimePrompts;
-    prompts.splice(index, 1);
-    renderPrompts(type, prompts);
+    lifetimePrompts.splice(index, 1);
+    renderLifetimePrompts();
   };
 
-  window.updatePromptText = function(type, index, text){
-    const prompts = type === 'regular' ? regularPrompts : lifetimePrompts;
-    if (prompts[index]) {
-      prompts[index].text = text;
+  window.updateLifetimePromptText = function(index, text){
+    if (lifetimePrompts[index]) {
+      lifetimePrompts[index].text = text;
     }
   };
 
-  window.updatePromptName = function(type, index, name){
-    const prompts = type === 'regular' ? regularPrompts : lifetimePrompts;
-    if (prompts[index]) {
-      prompts[index].name = name;
+  window.updateLifetimePromptName = function(index, name){
+    if (lifetimePrompts[index]) {
+      lifetimePrompts[index].name = name;
     }
   };
-
-  document.getElementById('addRegularPromptBtn').addEventListener('click', () => {
-    regularPrompts.push({ name: 'New Prompt', text: 'Create a {style} icon for {userName} achieving {awardLabel} ({milestone}).', enabled: true });
-    renderPrompts('regular', regularPrompts);
-  });
 
   document.getElementById('addLifetimePromptBtn').addEventListener('click', () => {
     lifetimePrompts.push({ name: 'New Lifetime Prompt', text: 'Design an award for {userName} reaching {milestone} lifetime steps ({awardLabel}). Incorporate {interestText} with {styleHint}.', enabled: true });
-    renderPrompts('lifetime', lifetimePrompts);
-  });
-
-  document.getElementById('saveRegularPromptsBtn').addEventListener('click', async () => {
-    const statusEl = document.getElementById('regularPromptsStatus');
-    if (statusEl) statusEl.textContent = 'Saving…';
-    try {
-      const r = await postJson(base + 'api/settings_set.php', { key: 'ai.image.prompts.regular', value: JSON.stringify(regularPrompts) });
-      if (!r.ok || (r.json && r.json.error)) {
-        if (statusEl) statusEl.textContent = 'Save failed';
-        return;
-      }
-      if (statusEl) statusEl.textContent = 'Saved';
-      setTimeout(()=>{ if (statusEl && statusEl.textContent === 'Saved') statusEl.textContent = ''; }, 1200);
-    } catch (e) {
-      if (statusEl) statusEl.textContent = 'Save error';
-    }
+    renderLifetimePrompts();
   });
 
   document.getElementById('saveLifetimePromptsBtn').addEventListener('click', async () => {

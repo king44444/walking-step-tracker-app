@@ -617,12 +617,23 @@ class SmsController
 
         // Generate award image for the highest new milestone
         $milestone = max($newMilestones);
+        $userData = ['name' => $name];
+        try {
+            $stmt = $pdo->prepare("SELECT interests FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row && array_key_exists('interests', $row)) {
+                $userData['interests'] = $row['interests'];
+            }
+        } catch (\Throwable $e) {
+            // Ignore lookup failures; fallback prompt will handle missing interests
+        }
         $res = ai_image_generate([
             'user_id' => $userId,
             'user_name' => $name,
+            'user' => $userData,
             'award_kind' => 'lifetime_steps',
-            'milestone_value' => $milestone,
-            'style' => 'badge'
+            'milestone_value' => $milestone
         ]);
 
         if ($res['ok'] ?? false) {

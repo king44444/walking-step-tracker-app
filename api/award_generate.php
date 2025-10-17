@@ -80,7 +80,6 @@ try {
     'user' => $u,  // Pass complete user object for lifetime awards
     'award_kind' => $kind,
     'milestone_value' => $milestone,
-    'style' => 'badge',
     'force' => $force,
   ]);
 
