@@ -24,17 +24,24 @@ function award_label(string $kind, int $milestone): string {
     }
     return number_format($milestone) . ' Steps';
   }
-  if ($k === 'attendance_weeks') {
+  if ($k === 'attendance_days') {
     $map = [
-      25 => '25 Weeks Club',
-      50 => '50 Weeks Club',
-      100 => 'Century Weeks Club',
+      175 => '175-Day Streak',
+      350 => '350-Day Streak',
+      700 => '700-Day Streak',
     ];
-    if (isset($map[$milestone])) return $map[$milestone];
+    if (isset($map[$milestone])) {
+      return $map[$milestone];
+    }
+    if ($milestone >= 1) {
+      return number_format($milestone) . ' Check-in Days';
+    }
+    return 'Attendance Days';
+  }
+  if ($k === 'attendance_weeks') {
     return number_format($milestone) . ' Weeks';
   }
   // Default: title-cased kind
   $base = ucwords(str_replace('_', ' ', $k));
   return trim($base);
 }
-

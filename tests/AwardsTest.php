@@ -211,4 +211,48 @@ class AwardsTest extends TestCase
         // Results should be identical
         $this->assertEquals($awards1[0]['awarded_at'], $awards2[0]['awarded_at']);
     }
+
+    public function testGetAttendanceDaysNoData(): void
+    {
+        $this->pdo->exec("INSERT INTO users (id, name) VALUES (1, 'Test User')");
+
+        $awards = get_attendance_days_awards($this->pdo, 1, [2, 4]);
+
+        $this->assertCount(2, $awards);
+        foreach ($awards as $award) {
+            $this->assertFalse($award['earned']);
+            $this->assertNull($award['awarded_at']);
+            $this->assertEquals('assets/admin/no-photo.svg', $award['image_url']);
+        }
+    }
+
+    public function testGetAttendanceDaysWithSparseData(): void
+    {
+        $this->pdo->exec("INSERT INTO users (id, name) VALUES (1, 'Test User')");
+        $this->pdo->exec("INSERT INTO weeks (id, starts_on) VALUES (1, '2025-08-11')");
+        $this->pdo->exec("
+            INSERT INTO entries (user_id, week_id, mon, tue, wed, thu, fri, sat)
+            VALUES (1, 1, 1000, 0, 1500, 0, 800, 0)
+        ");
+
+        $awards = get_attendance_days_awards($this->pdo, 1, [1, 3]);
+
+        $this->assertCount(2, $awards);
+
+        $first = $awards[0];
+        $this->assertTrue($first['earned']);
+        $this->assertEquals(1, $first['threshold']);
+        $this->assertEquals('2025-08-11', $first['awarded_at']);
+
+        $second = $awards[1];
+        $this->assertTrue($second['earned']);
+        $this->assertEquals(3, $second['threshold']);
+        $this->assertEquals('2025-08-15', $second['awarded_at']);
+
+        $stmt = $this->pdo->query("SELECT award_key, threshold, awarded_at FROM user_awards_cache ORDER BY threshold");
+        $cacheRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->assertCount(2, $cacheRows);
+        $this->assertEquals('attendance_days_1', $cacheRows[0]['award_key']);
+        $this->assertEquals('attendance_days_3', $cacheRows[1]['award_key']);
+    }
 }

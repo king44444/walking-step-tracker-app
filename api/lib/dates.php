@@ -31,11 +31,19 @@ function resolve_active_week(PDO $pdo){
  * 
  * @param string $weekStart ISO date YYYY-MM-DD (the Monday)
  * @param array $daySteps Assoc array with keys: monday, tuesday, wednesday, thursday, friday, saturday (values can be null)
- * @return array Assoc array ['YYYY-MM-DD' => steps, ...] for 6 days (Mon-Sat)
+ * @param bool|null $includeSunday When true, include Sunday as the 7th day.
+ *                                 When null, auto-detect based on provided data.
+ * @return array Assoc array ['YYYY-MM-DD' => steps, ...] for 6 or 7 days
  */
-function expand_week_to_daily_dates(string $weekStart, array $daySteps): array {
+function expand_week_to_daily_dates(string $weekStart, array $daySteps, ?bool $includeSunday = null): array {
   $result = [];
   $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  if ($includeSunday === null) {
+    $includeSunday = array_key_exists('sunday', $daySteps) || array_key_exists('sun', $daySteps);
+  }
+  if ($includeSunday) {
+    $days[] = 'sunday';
+  }
   
   try {
     $tz = new DateTimeZone(env('WALK_TZ', 'America/Denver'));
@@ -43,7 +51,11 @@ function expand_week_to_daily_dates(string $weekStart, array $daySteps): array {
     
     foreach ($days as $day) {
       $dateStr = $date->format('Y-m-d');
-      $steps = isset($daySteps[$day]) && $daySteps[$day] !== null ? (int)$daySteps[$day] : 0;
+      if ($day === 'sunday' && !array_key_exists($day, $daySteps) && array_key_exists('sun', $daySteps)) {
+        $steps = (int)$daySteps['sun'];
+      } else {
+        $steps = isset($daySteps[$day]) && $daySteps[$day] !== null ? (int)$daySteps[$day] : 0;
+      }
       $result[$dateStr] = $steps;
       $date->modify('+1 day');
     }

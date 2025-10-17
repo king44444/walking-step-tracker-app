@@ -23,7 +23,7 @@ export let NUDGES = [
 
 export let CUSTOM_AWARD_LABELS = {};
 export let LIFETIME_STEP_MILESTONES = [100000,250000,500000,1000000];
-export let LIFETIME_ATTENDANCE_MILESTONES = [25,50,100];
+export let LIFETIME_ATTENDANCE_MILESTONES = [175,350,700];
 
 // Compute base URL like: /dev/html/walk/
 export const BASE = (() => {
@@ -58,4 +58,3 @@ export async function loadConfig() {
     console.warn('Failed to load config, using defaults', e);
   }
 }
-

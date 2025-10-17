@@ -5,6 +5,7 @@ declare(strict_types=1);
 header('X-Deprecated: This endpoint will be removed; use router /api/... instead');
 require_once __DIR__ . '/../vendor/autoload.php';
 App\Core\Env::bootstrap(dirname(__DIR__));
+require_once __DIR__ . '/lib/awards.php';
 use App\Config\DB;
 $pdo = DB::pdo();
 
@@ -298,7 +299,7 @@ try {
 
 // Backfill AI awards (idempotent).
 // - lifetime_steps milestones: 100000, 250000, 500000, 1000000
-// - attendance_weeks milestones: 25, 50, 100
+// - attendance_days milestones: 175, 350, 700
 // This runs safely on existing installs and will only insert missing awards.
 try {
   $stmtUsers = $pdo->query("
@@ -306,27 +307,20 @@ try {
       COALESCE((
         SELECT SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0))
         FROM entries e WHERE e.name = u.name
-      ),0) AS total_steps,
-      COALESCE((
-        SELECT COUNT(1)
-        FROM entries e WHERE e.name = u.name AND (
-          COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(saturday,0)
-        ) > 0
-      ),0) AS weeks_with_data
+      ),0) AS total_steps
     FROM users u
   ")->fetchAll(PDO::FETCH_ASSOC);
 
   $checkStmt = $pdo->prepare("SELECT 1 FROM ai_awards WHERE user_id = :uid AND kind = :kind AND milestone_value = :val LIMIT 1");
   $insStmt = $pdo->prepare("INSERT INTO ai_awards (user_id, kind, milestone_value, week, image_path, meta) VALUES (:uid, :kind, :val, NULL, :img, NULL)");
 
-  $lifetimeThresholds = [100000, 250000, 500000, 1000000];
-  $attendanceThresholds = [25, 50, 100];
+  $lifetimeThresholds = parse_milestones_string(setting_get('milestones.lifetime_steps', '100000,250000,500000,750000,1000000'));
+  $attendanceThresholds = parse_milestones_string(setting_get('milestones.attendance_days', '175,350,700'));
 
   foreach ($stmtUsers as $u) {
     $uid = (int)($u['id'] ?? 0);
     if ($uid === 0) continue;
     $total = (int)($u['total_steps'] ?? 0);
-    $weeks = (int)($u['weeks_with_data'] ?? 0);
 
     foreach ($lifetimeThresholds as $t) {
       if ($total >= $t) {
@@ -337,11 +331,19 @@ try {
       }
     }
 
-    foreach ($attendanceThresholds as $t) {
-      if ($weeks >= $t) {
-        $checkStmt->execute([':uid'=>$uid, ':kind'=>'attendance_weeks', ':val'=>$t]);
+    if (!empty($attendanceThresholds)) {
+      $attendanceAwards = get_attendance_days_awards($pdo, $uid, $attendanceThresholds);
+      foreach ($attendanceAwards as $award) {
+        if (!($award['earned'] ?? false)) {
+          continue;
+        }
+        $threshold = (int)($award['threshold'] ?? 0);
+        if ($threshold <= 0) {
+          continue;
+        }
+        $checkStmt->execute([':uid'=>$uid, ':kind'=>'attendance_days', ':val'=>$threshold]);
         if (!$checkStmt->fetchColumn()) {
-          $insStmt->execute([':uid'=>$uid, ':kind'=>'attendance_weeks', ':val'=>$t, ':img'=>null]);
+          $insStmt->execute([':uid'=>$uid, ':kind'=>'attendance_days', ':val'=>$threshold, ':img'=>null]);
         }
       }
     }

@@ -44,7 +44,7 @@ try {
     'daily.milestones',
     // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps',
-    'milestones.attendance_weeks'
+    'milestones.attendance_days'
   ];
   if (!in_array($key, $allowed, true)) { http_response_code(400); echo json_encode(['error'=>'bad_key']); exit; }
   $val = $in['value'] ?? null;

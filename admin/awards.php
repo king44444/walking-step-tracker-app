@@ -26,7 +26,7 @@ try {
     SELECT a.id, a.user_id, u.name, a.kind, a.milestone_value, a.image_path, a.created_at
     FROM ai_awards a
     JOIN users u ON u.id = a.user_id
-    WHERE a.kind IN ('lifetime_steps', 'attendance_weeks')
+    WHERE a.kind IN ('lifetime_steps', 'attendance_days')
     ORDER BY a.created_at DESC
     LIMIT 100
   ");
@@ -60,23 +60,23 @@ function parse_milestone_list(string $raw, string $fallback): array {
 }
 
 $defaultLifetime = '100000,250000,500000,750000,1000000';
-$defaultAttendance = '25,50,100';
+$defaultAttendance = '175,350,700';
 $milestonesLifetime = parse_milestone_list('', $defaultLifetime);
 $milestonesAttendance = parse_milestone_list('', $defaultAttendance);
 try {
   $milestonesLifetime = parse_milestone_list((string)setting_get('milestones.lifetime_steps', $defaultLifetime), $defaultLifetime);
-  $milestonesAttendance = parse_milestone_list((string)setting_get('milestones.attendance_weeks', $defaultAttendance), $defaultAttendance);
+  $milestonesAttendance = parse_milestone_list((string)setting_get('milestones.attendance_days', $defaultAttendance), $defaultAttendance);
 } catch (Throwable $e) {
   // ignore and fallback to defaults defined above
 }
 $awardSettings = [
   'milestones' => [
     'lifetime_steps' => $milestonesLifetime,
-    'attendance_weeks' => $milestonesAttendance,
+    'attendance_days' => $milestonesAttendance,
   ],
   'kindMap' => [
     'Lifetime Steps' => 'lifetime_steps',
-    'Attendance Weeks' => 'attendance_weeks',
+    'Attendance Days' => 'attendance_days',
   ],
 ];
 
@@ -193,7 +193,7 @@ $awardSettings = [
           Kind:
           <select id="genKind">
             <option value="lifetime_steps">Lifetime Steps</option>
-            <option value="attendance_weeks">Attendance Weeks</option>
+            <option value="attendance_days">Attendance Days</option>
           </select>
         </label>
         <label style="flex:1">
@@ -223,7 +223,7 @@ $awardSettings = [
           <select id="batchKind" style="width:100%">
             <option value="">All kinds</option>
             <option value="lifetime_steps">Lifetime Steps</option>
-            <option value="attendance_weeks">Attendance Weeks</option>
+            <option value="attendance_days">Attendance Days</option>
           </select>
         </label>
       </div>
@@ -252,8 +252,8 @@ $awardSettings = [
 
       <div class="row" style="margin-bottom:8px">
         <label style="flex:1">
-          Attendance weeks (checkins):
-          <input id="msAttendance" type="text" placeholder="25,50,100" style="width:100%" />
+          Attendance days (checkins):
+          <input id="msAttendance" type="text" placeholder="175,350,700" style="width:100%" />
         </label>
       </div>
 
@@ -670,7 +670,7 @@ function updateMsPreview() {
   const l = parseMilestones(document.getElementById('msLifetime').value);
   const a = parseMilestones(document.getElementById('msAttendance').value);
   const el = document.getElementById('msPreview');
-  el.textContent = `Lifetime: ${formatList(l)} · Attendance: ${formatList(a)}`;
+  el.textContent = `Lifetime: ${formatList(l)} · Attendance days: ${formatList(a)}`;
 }
 
 async function loadMilestones() {
@@ -679,7 +679,7 @@ async function loadMilestones() {
     const j = await r.json();
     if (j) {
       document.getElementById('msLifetime').value = j['milestones.lifetime_steps'] || '';
-      document.getElementById('msAttendance').value = j['milestones.attendance_weeks'] || '';
+      document.getElementById('msAttendance').value = j['milestones.attendance_days'] || '';
       updateMsPreview();
     }
   } catch (e) {
@@ -712,7 +712,7 @@ document.getElementById('saveMsBtn').addEventListener('click', async () => {
   showStatus('Saving milestones...');
   try {
     const r1 = await saveSetting('milestones.lifetime_steps', l.join(','));
-    const r2 = await saveSetting('milestones.attendance_weeks', a.join(','));
+    const r2 = await saveSetting('milestones.attendance_days', a.join(','));
     if ((r1 && r1.ok) && (r2 && r2.ok)) {
       showStatus('✓ Milestones saved', 'ok');
       updateMsPreview();
@@ -729,7 +729,7 @@ document.getElementById('saveMsBtn').addEventListener('click', async () => {
 document.getElementById('resetMsBtn').addEventListener('click', async () => {
   if (!confirm('Reset milestones to recommended defaults?')) return;
   const defaultsLifetime = '100000,250000,500000,750000,1000000';
-  const defaultsAttendance = '25,50,100';
+  const defaultsAttendance = '175,350,700';
   document.getElementById('msLifetime').value = defaultsLifetime;
   document.getElementById('msAttendance').value = defaultsAttendance;
   updateMsPreview();
@@ -737,7 +737,7 @@ document.getElementById('resetMsBtn').addEventListener('click', async () => {
   try {
     showStatus('Saving defaults...');
     const r1 = await saveSetting('milestones.lifetime_steps', defaultsLifetime);
-    const r2 = await saveSetting('milestones.attendance_weeks', defaultsAttendance);
+    const r2 = await saveSetting('milestones.attendance_days', defaultsAttendance);
     if ((r1 && r1.ok) && (r2 && r2.ok)) {
       showStatus('✓ Defaults saved', 'ok');
       setTimeout(() => location.reload(), 1000);

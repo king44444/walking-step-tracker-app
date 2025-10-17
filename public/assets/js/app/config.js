@@ -25,7 +25,7 @@ export let CUSTOM_AWARD_LABELS = {};
 export let DAILY_MILESTONES = [];
 export let AWARDS_SETTINGS = { milestone_colors: {}, chip_text_color: '#FFFFFF', chip_border_opacity: 0.2 };
 export let LIFETIME_STEP_MILESTONES = [100000,250000,500000,1000000];
-export let LIFETIME_ATTENDANCE_MILESTONES = [25,50,100];
+export let LIFETIME_ATTENDANCE_MILESTONES = [175,350,700];
 export let SHOW_NUDGES = false;
 
 // Compute base URL like: /dev/html/walk/

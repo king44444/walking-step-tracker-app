@@ -201,7 +201,7 @@ try {
         <label>Kind:
           <select id="awKind">
             <option value="lifetime_steps">lifetime_steps</option>
-            <option value="attendance_weeks">attendance_weeks</option>
+            <option value="attendance_days">attendance_days</option>
             <option value="custom">custom</option>
           </select>
         </label>
