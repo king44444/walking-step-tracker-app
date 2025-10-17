@@ -67,6 +67,12 @@ Safe, one‑command deploy with backup and migrations:
 ```bash
 ./scripts/deploy_to_pi.sh
 ```
+
+Before you run it
+- Update the script’s `PI_HOST`, `PI_USER`, and (if needed) `REMOTE_ROOT` so they point at **your** server. They ship with the maintainer’s values and will fail or deploy to the wrong box if you leave them untouched.
+- Ensure you can SSH to that host without an interactive password prompt (SSH key or `ssh-agent`).
+- Optionally export `PI_HOST`, `PI_USER`, or `REMOTE_ROOT` in your shell to override the defaults for a single run.
+
 What it does
 - Backs up remote `data/` to `backup/` locally (tar or rsync fallback).
 - Rsyncs code (excludes local data, .git, etc.).
@@ -75,6 +81,9 @@ What it does
 - Preps an Nginx snippet for `/api/*` routing and restarts PHP‑FPM.
 
 Pro tip: The snippet is generated; include it in your Nginx server block once.
+
+Nginx snippet gotcha
+- When copying the generated `/etc/nginx/snippets/walk_api_routes.conf`, keep the heredoc quoted (`<<'CONF'`) or escape `$` variables so `try_files $uri ...` survives. Always run `sudo nginx -t` before restarting Nginx to avoid outages.
 
 **Reminders Scheduler (cron)**
 - Reminders are sent by `bin/run_reminders.php` and require a per-minute cron on the server.

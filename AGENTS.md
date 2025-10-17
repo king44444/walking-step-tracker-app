@@ -20,6 +20,8 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && curl -s api/weeks.php | jq ."
 ```
 
+> ⚠️ Update or export `PI_HOST`, `PI_USER`, and (if needed) `REMOTE_ROOT` before running the deploy script. Defaults in the repo point at Mike’s Raspberry Pi.
+
 ## Reminders Scheduler (Cron)
 - The reminder system is driven by `bin/run_reminders.php` and must be scheduled to run every minute.
 - Server log directory: `data/logs` (created automatically in the steps below).

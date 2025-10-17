@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOCAL_ROOT="/Users/michaelking/Documents/projects/king-walk-week"
-#PI_HOST="piwebserver.local"
-PI_HOST="192.168.0.103"
-PI_USER="mike"
-REMOTE_ROOT="/var/www/public_html/dev/html/walk"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# Allow overrides via environment variables while keeping sane defaults.
+PI_HOST="${PI_HOST:-192.168.0.103}"
+PI_USER="${PI_USER:-mike}"
+REMOTE_ROOT="${REMOTE_ROOT:-/var/www/public_html/dev/html/walk}"
 WEB_USER="www-data"
 
 TS=$(date -u +"%Y%m%dT%H%M%SZ")
