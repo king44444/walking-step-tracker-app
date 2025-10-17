@@ -71,5 +71,14 @@ function twilio_verify(array $post, string $headerSig, string $authToken): array
 function twilio_should_skip(): bool {
   if (getenv('TWILIO_TEST_MODE') === '1') return true;
   $remote = $_SERVER['REMOTE_ADDR'] ?? '';
-  return in_array($remote, ['127.0.0.1','::1','192.168.0.134'], true);
+  $trusted = ['127.0.0.1','::1'];
+  $extra = getenv('TWILIO_TRUSTED_IPS');
+  if ($extra) {
+    foreach (explode(',', $extra) as $ip) {
+      $ip = trim($ip);
+      if ($ip !== '') $trusted[] = $ip;
+    }
+  }
+
+  return in_array($remote, $trusted, true);
 }

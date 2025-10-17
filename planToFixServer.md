@@ -22,8 +22,8 @@
   Prep and Backup
 
   - SSH and go to the app:
-      - ssh mike@192.168.0.103
-      - cd /var/www/public_html/dev/html/walk
+      - ssh deploy@example-host
+      - cd /var/www/your-app
   - Create a timestamped backup (uses sqlite’s safe .backup):
       - mkdir -p data/backup
       - ts=$(date +%Y%m%d_%H%M%S)
@@ -173,14 +173,15 @@
 
   Final sanity checks
 
-  - Spot check William’s award page:
-      - In browser: http:///dev/html/walk/site/user.php?id=<WILLIAM_ID>
+  - Spot check a participant’s award page:
+      - In browser: https://example.com/walk/site/user.php?id=<USER_ID>
       - Earned date should read the real calendar day (e.g., Oct 15) now.
   - If needed, re-run the awards API:
-      - ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && php -r "require
-  'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); echo json_encode(require 'api/
-  user_awards.php');""
-      - Or simpler, refresh the profile page; it fetches api/user_awards.php.
+      - Run on the server (replace host/path as needed):
+        ```bash
+        ssh deploy@example-host "cd /var/www/your-app && php -r 'require \"vendor/autoload.php\"; \\App\\Core\\Env::bootstrap(\'.\'); echo json_encode(require \"api/user_awards.php\");'"
+        ```
+      - Or simpler, refresh the profile page; it fetches `api/user_awards.php`.
 
   Rollback plan
 

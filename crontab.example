@@ -1,7 +1,7 @@
 # Nightly DB backup at 02:10
-10 2 * * * /bin/bash /var/www/public_html/dev/html/walk/scripts/backup_db.sh >/dev/null 2>&1
+10 2 * * * /bin/bash /var/www/your-app/scripts/backup_db.sh >/dev/null 2>&1
 # Weekly audit prune Sunday 03:05
-5 3 * * 0 /usr/bin/php /var/www/public_html/dev/html/walk/scripts/rotate_audit.php >/dev/null 2>&1
+5 3 * * 0 $(command -v php) /var/www/your-app/scripts/rotate_audit.php >/dev/null 2>&1
 
 # Weekly rollover: finalize the current week and create next week's roster (Sunday 23:59)
-59 23 * * 0 /bin/bash /var/www/public_html/dev/html/walk/scripts/weekly_rollover.sh >> /var/www/public_html/dev/html/walk/backup/weekly_rollover.log 2>&1
+59 23 * * 0 /bin/bash /var/www/your-app/scripts/weekly_rollover.sh >> /var/www/your-app/backup/weekly_rollover.log 2>&1

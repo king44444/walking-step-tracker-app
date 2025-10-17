@@ -205,15 +205,20 @@ function ai_image_provider_generate(string $prompt, array $params): array {
     'image_config' => [ 'aspect_ratio' => $aspect ],
   ];
 
+  $headers = [
+    'Content-Type: application/json',
+    'Authorization: Bearer ' . $apiKey,
+    'X-Title: King Walk Week',
+  ];
+  $referer = setting_get('site.url', env('SITE_URL', ''));
+  if ($referer) {
+    $headers[] = 'HTTP-Referer: ' . rtrim($referer, '/');
+  }
+
   $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
   curl_setopt_array($ch, [
     CURLOPT_POST => true,
-    CURLOPT_HTTPHEADER => [
-      'Content-Type: application/json',
-      'Authorization: Bearer ' . $apiKey,
-      'HTTP-Referer: https://mikebking.com',
-      'X-Title: King Walk Week',
-    ],
+    CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => json_encode($body),
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT => max(5, min($timeout, 20)),

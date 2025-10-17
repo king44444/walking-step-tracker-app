@@ -6,7 +6,7 @@ set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BASE_URL="${BASE_URL-}"
-if [ -z "$BASE_URL" ]; then BASE_URL="https://mikebking.com/dev/html/walk"; fi
+if [ -z "$BASE_URL" ]; then BASE_URL="http://localhost/dev/html/walk"; fi
 
 # Read a key from environment or .env.local/.env
 read_env_var() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-BASE="${1:-https://mikebking.com/dev/html/walk}"
+BASE="${1:-http://localhost/dev/html/walk}"
 
 curl_json() {
   curl -fsS "$@" | sed 's/.*/RESPONSE: &/'
@@ -36,4 +36,3 @@ echo "-- GET weeks (sorted list)"
 curl -fsS "$BASE/api/weeks.php" | sed -n '1,200p' >/dev/null || true
 
 echo "OK"
-

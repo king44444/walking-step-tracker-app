@@ -14,13 +14,13 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 ### Deploy to Server
 ```bash
 # From local machine - deploys code and restarts services
-./scripts/deploy_to_pi.sh
+PI_HOST=your-hostname PI_USER=deploy REMOTE_ROOT=/var/www/your-app REMOTE_URI_PREFIX=/walk ./scripts/deploy_to_pi.sh
 
 # Check deployment status
-ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && curl -s api/weeks.php | jq ."
+ssh deploy@example-host "cd /var/www/your-app && curl -s api/weeks.php | jq ."
 ```
 
-> ⚠️ Update or export `PI_HOST`, `PI_USER`, and (if needed) `REMOTE_ROOT` before running the deploy script. Defaults in the repo point at Mike’s Raspberry Pi.
+> ⚠️ Export `PI_HOST`, `PI_USER`, `REMOTE_ROOT`, and (if needed) `REMOTE_URI_PREFIX` before running the deploy script. Substitute your own SSH user/host in the commands below.
 
 ## Reminders Scheduler (Cron)
 - The reminder system is driven by `bin/run_reminders.php` and must be scheduled to run every minute.
@@ -29,15 +29,15 @@ ssh mike@192.168.0.103 "cd /var/www/public_html/dev/html/walk && curl -s api/wee
 ### Install/Verify Cron on Server
 ```bash
 # SSH to the server
-ssh mike@192.168.0.103
-cd /var/www/public_html/dev/html/walk
+ssh deploy@example-host
+cd /var/www/your-app
 
 # Ensure log directory exists
 mkdir -p data/logs
 
 # Add a per-minute cron to run reminders (user crontab)
 crontab -l 2>/dev/null | grep -q 'bin/run_reminders.php' || \
-  (crontab -l 2>/dev/null; echo '*/1 * * * * /usr/bin/php /var/www/public_html/dev/html/walk/bin/run_reminders.php >> /var/www/public_html/dev/html/walk/data/logs/reminders.log 2>&1') | crontab -
+  (crontab -l 2>/dev/null; echo "*/1 * * * * $(command -v php) /var/www/your-app/bin/run_reminders.php >> /var/www/your-app/data/logs/reminders.log 2>&1") | crontab -
 
 # Confirm entry exists
 crontab -l | sed -n '1,200p'
@@ -48,8 +48,8 @@ tail -f data/logs/reminders.log
 
 ### Manual Validation
 ```bash
-# Force Mike's reminder to current minute and enable
-php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Mike'\")->execute([$now]); echo \"set $now\\n\";"
+# Force an example reminder to the current minute and enable
+php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Example'\")->execute([$now]); echo \"set $now\\n\";"
 
 # Run the scheduler once
 php bin/run_reminders.php
@@ -63,11 +63,11 @@ Notes
 - Reminders are sent only once per user per day (tracked by `reminders_log`). Users with `phone_opted_out=1` are skipped.
 
 ### Current Status (Verified)
-- Cron installed for user `mike`: runs every minute.
+- Cron installed for user `deploy`: runs every minute.
 - DB tables present: `reminders_log`, `sms_consent_log`; users table has `phone_opted_out`.
 - Scheduler timezone: uses `WALK_TZ` via `now_in_tz()`.
 - Outbound SMS: CLI can read Twilio creds via `$_ENV` or fallback to `.env.local` parse.
-- End-to-end test (Mike) succeeded; one reminder sent and logged.
+- End-to-end test (sample user) succeeded; one reminder sent and logged.
 
 ### Troubleshooting Quick-Checks
 - If `bin/run_reminders.php` says “Failed to send reminder … Missing TWILIO_*”:
@@ -94,10 +94,10 @@ Notes
 - Minimal working snippet content:
   ```nginx
   # Include this inside the appropriate server { } block
-  location ^~ /dev/html/walk/api/ {
-      try_files $uri /dev/html/walk/public/index.php;
+  location ^~ /walk/api/ {
+      try_files $uri /walk/public/index.php;
       include fastcgi_params;
-      fastcgi_param SCRIPT_FILENAME /var/www/public_html/dev/html/walk/public/index.php;
+      fastcgi_param SCRIPT_FILENAME /var/www/your-app/public/index.php;
       fastcgi_param QUERY_STRING $query_string;
       fastcgi_param REQUEST_METHOD $request_method;
       fastcgi_param CONTENT_TYPE $content_type;
@@ -109,8 +109,8 @@ Notes
 ### SSH Debug Commands
 ```bash
 # Connect to server
-ssh mike@192.168.0.103
-cd /var/www/public_html/dev/html/walk
+ssh deploy@example-host
+cd /var/www/your-app
 
 # Check logs
 tail -f /var/log/nginx/error.log

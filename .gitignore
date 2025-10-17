@@ -11,9 +11,12 @@ data/
 *.bak
 backup/
 docs/
+consolidated_code.txt
+gathered_code.txt
 
 # macOS and editor
 .DS_Store
 site/.DS_Store
 api/.DS_Store
 .vscode/
+.phpunit.result.cache

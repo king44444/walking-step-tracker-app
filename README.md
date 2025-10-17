@@ -69,9 +69,9 @@ Safe, one‑command deploy with backup and migrations:
 ```
 
 Before you run it
-- Update the script’s `PI_HOST`, `PI_USER`, and (if needed) `REMOTE_ROOT` so they point at **your** server. They ship with the maintainer’s values and will fail or deploy to the wrong box if you leave them untouched.
+- Export `PI_HOST`, `PI_USER`, and `REMOTE_ROOT` to point at **your** server (or inline them when invoking the script).
+- (Optional) Export `REMOTE_URI_PREFIX` if your app is served from a different URL prefix (defaults to `/dev/html/walk`).
 - Ensure you can SSH to that host without an interactive password prompt (SSH key or `ssh-agent`).
-- Optionally export `PI_HOST`, `PI_USER`, or `REMOTE_ROOT` in your shell to override the defaults for a single run.
 
 What it does
 - Backs up remote `data/` to `backup/` locally (tar or rsync fallback).
@@ -88,10 +88,10 @@ Nginx snippet gotcha
 **Reminders Scheduler (cron)**
 - Reminders are sent by `bin/run_reminders.php` and require a per-minute cron on the server.
 - Create the log directory and install the cron entry for the deploy user:
-  - `mkdir -p /var/www/public_html/dev/html/walk/data/logs`
-  - `crontab -l 2>/dev/null | grep -q 'bin/run_reminders.php' || (crontab -l 2>/dev/null; echo '*/1 * * * * /usr/bin/php /var/www/public_html/dev/html/walk/bin/run_reminders.php >> /var/www/public_html/dev/html/walk/data/logs/reminders.log 2>&1') | crontab -`
+  - `mkdir -p /var/www/your-app/data/logs`
+  - `crontab -l 2>/dev/null | grep -q 'bin/run_reminders.php' || (crontab -l 2>/dev/null; echo "*/1 * * * * $(command -v php) /var/www/your-app/bin/run_reminders.php >> /var/www/your-app/data/logs/reminders.log 2>&1") | crontab -`
 - Validate quickly:
-  - Set a test time: `php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Mike'\")->execute([$now]); echo \"set $now\\n\";"`
+  - Set a test time: `php -r "require 'vendor/autoload.php'; \App\Core\Env::bootstrap('.'); $pdo=\App\Config\DB::pdo(); $now=(new DateTime('now', new DateTimeZone(date_default_timezone_get())))->format('H:i'); $pdo->prepare(\"UPDATE users SET reminders_enabled=1, reminders_when=? WHERE name='Example'\")->execute([$now]); echo \"set $now\\n\";"`
   - Run once: `php bin/run_reminders.php`
   - Check: `tail -f data/logs/reminders.log`
 
@@ -114,6 +114,7 @@ Environment (.env or .env.local at repo root)
 - `ADMIN_USER`, `ADMIN_PASS` — required in prod to protect admin.
 - `DB_PATH` — optional, defaults to `data/walkweek.sqlite`.
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — optional; enable SMS sending and signature checks.
+- `TWILIO_TRUSTED_IPS` — optional; comma-separated IPs allowed to bypass Twilio signature verification in non-production setups.
 - `CSRF_SECRET` — optional; set for deterministic tokens across restarts.
 
 Public settings (`site/config.json`)

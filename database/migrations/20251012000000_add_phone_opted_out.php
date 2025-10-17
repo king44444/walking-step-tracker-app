@@ -1,14 +1,16 @@
 <?php
+declare(strict_types=1);
 
 use Phinx\Migration\AbstractMigration;
 
-class AddPhoneOptedOut extends AbstractMigration
+final class AddPhoneOptedOut extends AbstractMigration
 {
-    public function change()
+    public function change(): void
     {
-        // Add phone_opted_out column to users table for STOP compliance
-        $table = $this->table('users');
-        $table->addColumn('phone_opted_out', 'boolean', ['default' => 0, 'null' => false])
+        $t = $this->table('users');
+        if (!$t->hasColumn('phone_opted_out')) {
+            $t->addColumn('phone_opted_out', 'boolean', ['default' => 0, 'null' => false])
               ->update();
+        }
     }
 }

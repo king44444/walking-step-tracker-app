@@ -3,10 +3,24 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-# Allow overrides via environment variables while keeping sane defaults.
-PI_HOST="${PI_HOST:-192.168.0.103}"
-PI_USER="${PI_USER:-mike}"
-REMOTE_ROOT="${REMOTE_ROOT:-/var/www/public_html/dev/html/walk}"
+
+# Require deploy target details to be provided via environment variables.
+PI_HOST="${PI_HOST:-}"
+PI_USER="${PI_USER:-}"
+REMOTE_ROOT="${REMOTE_ROOT:-}"
+REMOTE_URI_PREFIX="${REMOTE_URI_PREFIX:-/dev/html/walk}"
+
+if [[ -z "${PI_HOST}" || -z "${PI_USER}" || -z "${REMOTE_ROOT}" ]]; then
+  cat <<'ERR' >&2
+Missing deploy target configuration.
+Set PI_HOST, PI_USER, and REMOTE_ROOT environment variables before running this script, e.g.:
+  export PI_HOST=your-pi-hostname
+  export PI_USER=deploy
+  export REMOTE_ROOT=/var/www/your-app
+  # optional: export REMOTE_URI_PREFIX=/app
+ERR
+  exit 1
+fi
 WEB_USER="www-data"
 
 TS=$(date -u +"%Y%m%dT%H%M%SZ")
@@ -96,17 +110,18 @@ ssh "${PI_USER}@${PI_HOST}" "bash -lc '
   cd \"${REMOTE_ROOT}\" && php api/migrate.php >/dev/null 2>&1 || true
 '"
 
-echo "Prepare Nginx snippet for /dev/html/walk/api/* routing (manual include required)..."
-ssh "${PI_USER}@${PI_HOST}" "sudo bash -lc '
+echo "Prepare Nginx snippet for ${REMOTE_URI_PREFIX}/api/* routing (manual include required)..."
+ssh "${PI_USER}@${PI_HOST}" "REMOTE_URI_PREFIX='${REMOTE_URI_PREFIX}' REMOTE_ROOT='${REMOTE_ROOT}' sudo bash -lc '
+  set +u
   set -e
   mkdir -p /etc/nginx/snippets
   SNIP=/etc/nginx/snippets/walk_api_routes.conf
-  cat > \"\$SNIP\" <<'CONF'
+  cat > \"\$SNIP\" <<CONF
   # Include this inside the appropriate server { } block
-  location ^~ /dev/html/walk/api/ {
-      try_files \$uri /dev/html/walk/public/index.php;
+  location ^~ \${REMOTE_URI_PREFIX}/api/ {
+      try_files \$uri \${REMOTE_URI_PREFIX}/public/index.php;
       include fastcgi_params;
-      fastcgi_param SCRIPT_FILENAME /var/www/public_html/dev/html/walk/public/index.php;
+      fastcgi_param SCRIPT_FILENAME \${REMOTE_ROOT}/public/index.php;
       fastcgi_param QUERY_STRING \$query_string;
       fastcgi_param REQUEST_METHOD \$request_method;
       fastcgi_param CONTENT_TYPE \$content_type;
@@ -124,13 +139,13 @@ ssh "${PI_USER}@${PI_HOST}" "sudo systemctl restart php8.2-fpm"
 # Optional diagnostics (no migration on deploy)
 echo
 echo "Quick DB check (weeks):"
-curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
+curl -sS "http://${PI_HOST}${REMOTE_URI_PREFIX}/api/weeks.php" || true
 echo
 echo "Weeks JSON:"
-curl -sS "http://${PI_HOST}/dev/html/walk/api/weeks.php" || true
+curl -sS "http://${PI_HOST}${REMOTE_URI_PREFIX}/api/weeks.php" || true
 echo
 echo "Health:"
-curl -sS "http://${PI_HOST}/dev/html/walk/api/health.php" || true
+curl -sS "http://${PI_HOST}${REMOTE_URI_PREFIX}/api/health.php" || true
 echo
 echo "Backup saved at: ${BACKUP_TAR}"
 echo "Done."

@@ -11,7 +11,7 @@ Audit mode:
 •Confirm settings loader and a place to add:
 •sms.admin_prefix_enabled (bool)
 •sms.admin_password (string)
-•app.public_base_url (string, e.g. https://mikebking.com)
+•app.public_base_url (string, e.g. https://example.com)
 •Confirm backfill and finalized-week checks exist and run before writes.
 
 Act mode:

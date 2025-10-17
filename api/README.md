@@ -1,13 +1,14 @@
 # Walk Week API — SMS / Twilio
 
 Overview
-- Webhook endpoint: `https://mikebking.com/dev/html/walk/api/sms.php`
+- Webhook endpoint: `https://example.com/walk/api/sms.php`
 - Purpose: accept Twilio SMS posts with step counts and upsert into the active week entries.
 
 Environment
 - api/.env.local should contain:
   - `WALK_TZ` (e.g. `America/Denver`)
-  - `TWILIO_AUTH_TOKEN` (set to Twilio auth token to enable signature verification; leave empty to disable)
+- `TWILIO_AUTH_TOKEN` (set to Twilio auth token to enable signature verification; leave empty to disable)
+- `TWILIO_TRUSTED_IPS` (optional comma-separated list; allows trusted senders when testing without Twilio signatures)
 
 SMS input rules
 - Accepted body formats:
@@ -53,7 +54,7 @@ Admin: enrolling phones
 Testing
 - Example curl (replace From number as needed):
 ```bash
-curl -i https://mikebking.com/dev/html/walk/api/sms.php \
+curl -i https://example.com/walk/api/sms.php \
   --data-urlencode "From=+18015551234" \
   --data-urlencode "Body=12345"
 ```
@@ -93,14 +94,14 @@ Signature Debug Playbook
 
 3) Run the signed curl test from your Mac (no PHP locally)
 - Set environment and run the helper to POST a signed request to the deployed endpoint:
-  export URL="https://mikebking.com/dev/html/walk/api/sms_status.php"
+  export URL="https://example.com/walk/api/sms_status.php"
   export AUTH="<same token as on Pi FPM>"
   ./scripts/curl_signed.sh
 - Expected: HTTP/2 200 (or HTTP/1.1 200 OK). If you receive 403, continue to step 4.
 
 4) Use the diagnostic endpoint when a test fails
 - If a signed test fails, query the diag endpoint to see what the server saw and computed:
-  curl -s "https://mikebking.com/dev/html/walk/api/_sig_diag.php?once=$(date +%s)" | jq .
+  curl -s "https://example.com/walk/api/_sig_diag.php?once=$(date +%s)" | jq .
 - Output fields to compare:
   - `url_seen` should match your test $URL (scheme, host, path). If different, Cloudflare or proxy forwarded host/proto may differ.
   - `post_sorted` shows sorted "Key:Value" pairs used to build the signature.

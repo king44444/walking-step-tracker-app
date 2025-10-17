@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/settings.php';
 
 function or_chat_complete(string $model, array $messages, ?float $temp=0.5, ?int $max_tokens=160): array {
   $apiKey = openrouter_api_key();
@@ -11,15 +12,20 @@ function or_chat_complete(string $model, array $messages, ?float $temp=0.5, ?int
     'temperature' => $temp,
     'max_tokens' => $max_tokens,
   ];
+  $headers = [
+    'Content-Type: application/json',
+    'Authorization: Bearer ' . $apiKey,
+    'X-Title: King Walk Week',
+  ];
+  $referer = setting_get('site.url', env('SITE_URL', ''));
+  if ($referer) {
+    $headers[] = 'HTTP-Referer: ' . rtrim($referer, '/');
+  }
+
   $ch = curl_init('https://openrouter.ai/api/v1/chat/completions');
   curl_setopt_array($ch, [
     CURLOPT_POST => true,
-    CURLOPT_HTTPHEADER => [
-      'Content-Type: application/json',
-      'Authorization: Bearer ' . $apiKey,
-      'HTTP-Referer: https://mikebking.com',
-      'X-Title: King Walk Week',
-    ],
+    CURLOPT_HTTPHEADER => $headers,
     CURLOPT_POSTFIELDS => json_encode($body),
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT => 20,
@@ -37,4 +43,3 @@ function or_chat_complete(string $model, array $messages, ?float $temp=0.5, ?int
   }
   return $json;
 }
-

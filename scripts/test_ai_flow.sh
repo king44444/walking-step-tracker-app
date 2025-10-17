@@ -3,7 +3,7 @@ set -eu
 
 # Test AI toggle + SMS flow
 # Usage:
-#   BASE_URL=https://mikebking.com/dev/html/walk FROM=+1XXXXXXXXXX ./scripts/test_ai_flow.sh
+#   BASE_URL=https://example.com/walk FROM=+1XXXXXXXXXX ./scripts/test_ai_flow.sh
 # If run on the server, you can omit BASE_URL and it will default to http://localhost/dev/html/walk
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
