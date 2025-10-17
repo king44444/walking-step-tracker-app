@@ -15,6 +15,7 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 ```bash
 # From local machine - deploys code and restarts services
 PI_HOST=your-hostname PI_USER=deploy REMOTE_ROOT=/var/www/your-app REMOTE_URI_PREFIX=/walk ./scripts/deploy_to_pi.sh
+./scripts/deploy_local.sh # wrapper with local defaults; pass args/env to override
 
 # Check deployment status
 ssh deploy@example-host "cd /var/www/your-app && curl -s api/weeks.php | jq ."
