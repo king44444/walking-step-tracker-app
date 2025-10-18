@@ -111,27 +111,29 @@ ssh "${PI_USER}@${PI_HOST}" "bash -lc '
 '"
 
 echo "Prepare Nginx snippet for ${REMOTE_URI_PREFIX}/api/* routing (manual include required)..."
-ssh "${PI_USER}@${PI_HOST}" "REMOTE_URI_PREFIX='${REMOTE_URI_PREFIX}' REMOTE_ROOT='${REMOTE_ROOT}' sudo bash -lc '
-  set +u
-  set -e
-  mkdir -p /etc/nginx/snippets
-  SNIP=/etc/nginx/snippets/walk_api_routes.conf
-  cat > \"\$SNIP\" <<CONF
+IFS= read -r -d '' NGINX_SNIPPET <<EOF || true
   # Include this inside the appropriate server { } block
-  location ^~ \${REMOTE_URI_PREFIX}/api/ {
-      try_files \$uri \${REMOTE_URI_PREFIX}/public/index.php;
+  location ^~ ${REMOTE_URI_PREFIX}/api/ {
+      try_files \$uri ${REMOTE_URI_PREFIX}/public/index.php;
       include fastcgi_params;
-      fastcgi_param SCRIPT_FILENAME \${REMOTE_ROOT}/public/index.php;
+      fastcgi_param SCRIPT_FILENAME ${REMOTE_ROOT}/public/index.php;
       fastcgi_param QUERY_STRING \$query_string;
       fastcgi_param REQUEST_METHOD \$request_method;
       fastcgi_param CONTENT_TYPE \$content_type;
       fastcgi_param CONTENT_LENGTH \$content_length;
       fastcgi_pass unix:/run/php/php8.2-fpm.sock;
   }
-CONF
+EOF
+
+ssh "${PI_USER}@${PI_HOST}" "REMOTE_URI_PREFIX='${REMOTE_URI_PREFIX}' REMOTE_ROOT='${REMOTE_ROOT}' sudo bash -lc '
+  set +u
+  set -e
+  mkdir -p /etc/nginx/snippets
   # Remove any previously installed invalid conf.d file to avoid nginx -t failures
   rm -f /etc/nginx/conf.d/walk_api_routes.conf || true
 '"
+
+ssh "${PI_USER}@${PI_HOST}" "sudo tee /etc/nginx/snippets/walk_api_routes.conf >/dev/null" <<<"${NGINX_SNIPPET}"
 
 echo "Restart php-fpm..."
 ssh "${PI_USER}@${PI_HOST}" "sudo systemctl restart php8.2-fpm"
