@@ -58,6 +58,26 @@ class SmsController
             $url = TwilioSignature::buildTwilioUrl();
             $ok = TwilioSignature::verify($_POST, $url, $auth);
             if (!$ok) {
+                $logDir = dirname(__DIR__, 2) . '/data/logs';
+                if (!is_dir($logDir)) {
+                    @mkdir($logDir, 0775, true);
+                }
+                $expected = TwilioSignature::computeSignature($_POST, $url, $auth);
+                $logPayload = [
+                    'at' => $now->format(\DateTime::ATOM),
+                    'url' => $url,
+                    'expected' => $expected,
+                    'header' => $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '',
+                    'host' => $_SERVER['HTTP_HOST'] ?? '',
+                    'forwarded_host' => $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '',
+                    'forwarded_proto' => $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '',
+                    'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+                    'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? '',
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    'post' => $_POST,
+                ];
+                $logPath = $logDir . '/sms_bad_sig.log';
+                file_put_contents($logPath, json_encode($logPayload, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
                 $audit_exec([$createdAt,$e164,$body,null,null,null,null,'bad_signature']);
                 http_response_code(403);
                 echo json_encode(['error'=>'bad_signature']);

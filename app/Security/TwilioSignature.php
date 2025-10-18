@@ -27,18 +27,29 @@ class TwilioSignature
         // Get signature from headers
         $signature = $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '';
 
-        // Build the data string: URL + sorted key-value pairs
+        $expectedSignature = self::computeSignature($request, $url, $authToken);
+
+        // Use constant-time comparison
+        return hash_equals($expectedSignature, $signature);
+    }
+
+    /**
+     * Compute the Twilio signature string for a request.
+     * Exposed for diagnostics so we can compare with headers on failures.
+     */
+    public static function computeSignature(array $request, string $url, string $authToken): string
+    {
+        if ($authToken === '') {
+            return '';
+        }
+
         $data = $url;
         ksort($request, SORT_STRING);
         foreach ($request as $key => $value) {
             $data .= $key . $value;
         }
 
-        // Calculate expected signature
-        $expectedSignature = base64_encode(hash_hmac('sha1', $data, $authToken, true));
-
-        // Use constant-time comparison
-        return hash_equals($expectedSignature, $signature);
+        return base64_encode(hash_hmac('sha1', $data, $authToken, true));
     }
 
     /**
