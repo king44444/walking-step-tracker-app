@@ -124,14 +124,22 @@ class SmsResponder
         if ($siteNoSlash !== '' && stripos($message, $siteNoSlash) !== false) return $message;
 
         // If message already contains the standard hint, avoid duplicate footer entirely
-        $hintPhrase = 'text "walk" or "menu" for menu';
-        if (stripos($message, $hintPhrase) !== false) return $message;
+        $hintPhrases = [
+            'text "info" or "walk" for menu',
+            // Backward compatibility with legacy footer phrasing
+            'text "walk" or "menu" for menu',
+        ];
+        foreach ($hintPhrases as $phrase) {
+            if (stripos($message, $phrase) !== false) {
+                return $message;
+            }
+        }
 
-        // Build single-line footer, appended on a new line
-        $reminder = "Visit {$site} — text \"walk\" or \"menu\" for menu.";
+        // Build footer and append with readable separator (space for single-line, newline for multi-line bodies)
+        $reminder = "Visit {$site} — text \"info\" or \"walk\" for menu.";
         $msg = rtrim($message);
-        $nl = (str_ends_with($msg, "\n")) ? '' : "\n";
-        return $msg . $nl . $reminder;
+        $separator = (strpos($msg, "\n") !== false) ? "\n" : ($msg === '' ? '' : ' ');
+        return $msg . $separator . $reminder;
     }
 
     private static function siteUrl(): string
