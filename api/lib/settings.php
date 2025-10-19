@@ -42,17 +42,17 @@ function settings_seed_defaults(PDO $pdo): void {
     'ai.image.prompts.lifetime' => json_encode([
       [
         'name' => 'Epic Achievement',
-        'text' => "Design a breathtaking digital award image celebrating a lifetime walking achievement. {userName} has reached {milestone} lifetime steps ({awardLabel}). Create a highly detailed, imaginative emblem that visually represents their personality and interest: {interestText}. Use luminous color, depth, and storytelling elements. Capture the feeling of epic accomplishment, motion, and personal triumph. Composition: centered emblem, cinematic lighting, subtle text 'Lifetime {milestone} Steps'. No faces or photo realism. Square 1024x1024 ratio. Style: digital painting + vector hybrid, vivid and collectible. Style hint: {styleHint}.",
+        'text' => "Design a breathtaking digital award image celebrating a lifetime {unitLabelLower} achievement. {userName} has reached {milestoneText} ({awardLabel}). Create a highly detailed, imaginative emblem that visually represents their personality and interest: {interestText}. Use luminous color, depth, and storytelling elements. Capture the feeling of epic accomplishment, motion, and personal triumph. Composition: centered emblem, cinematic lighting, subtle text '{bannerText}'. No faces or photo realism. Square 1024x1024 ratio. Style: digital painting + vector hybrid, vivid and collectible. Style hint: {styleHint}.",
         'enabled' => true
       ],
       [
         'name' => 'Mythic Journey',
-        'text' => "Create a legendary award illustration for {userName}'s lifetime milestone of {milestone} steps ({awardLabel}). Incorporate their interest in {interestText} into a mythic design with heroic symbolism. Epic scale, dramatic lighting, and profound achievement themes. Square 1024x1024. Style hint: {styleHint}.",
+        'text' => "Create a legendary award illustration for {userName}'s lifetime milestone of {milestoneText} ({awardLabel}). Incorporate their interest in {interestText} into a mythic design with heroic symbolism. Epic scale, dramatic lighting, and profound achievement themes. Square 1024x1024. Style hint: {styleHint}.",
         'enabled' => true
       ],
       [
         'name' => 'Personal Triumph',
-        'text' => "Illustrate {userName}'s personal triumph with {milestone} lifetime steps ({awardLabel}). Design around their interest in {interestText} with intimate, meaningful symbolism. Warm colors, personal scale, and authentic achievement feeling. Square 1024x1024. Style hint: {styleHint}.",
+        'text' => "Illustrate {userName}'s personal triumph with {milestoneText} ({awardLabel}). Design around their interest in {interestText} with intimate, meaningful symbolism. Warm colors, personal scale, and authentic achievement feeling. Square 1024x1024. Style hint: {styleHint}.",
         'enabled' => true
       ]
     ]),

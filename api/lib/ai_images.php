@@ -34,6 +34,43 @@ function ai_image_can_generate(): bool {
 }
 
 /**
+ * Normalize award kind aliases to canonical slugs.
+ */
+function ai_image_normalize_kind(string $kind): string {
+  $k = strtolower(trim($kind));
+  if ($k === 'attendance' || $k === 'lifetime_attendance') {
+    return 'attendance_days';
+  }
+  return $k;
+}
+
+/**
+ * Compute display context (labels, units, banner text) for an award.
+ */
+function ai_image_unit_context(string $kind, int $milestone): array {
+  $normalized = ai_image_normalize_kind($kind);
+  $isAttendance = ($normalized === 'attendance_days');
+
+  $sectionLabel = $isAttendance ? 'Lifetime Attendance' : 'Lifetime Steps';
+  $unitTitle = $isAttendance ? 'Days' : 'Steps';
+  $unitUpper = strtoupper($unitTitle);
+  $unitLower = strtolower($unitTitle);
+  $milestoneNum = number_format(max(0, $milestone));
+
+  return [
+    'kind' => $normalized,
+    'isAttendance' => $isAttendance,
+    'sectionLabel' => $sectionLabel,
+    'unitTitle' => $unitTitle,
+    'unitTitleLower' => $unitLower,
+    'unitUpper' => $unitUpper,
+    'milestoneNum' => $milestoneNum,
+    'milestoneText' => trim($milestoneNum . ' ' . $unitTitle),
+    'bannerText' => "LIFETIME {$milestoneNum} {$unitUpper}",
+  ];
+}
+
+/**
  * Generate or reuse an award image.
  *
  * Input (opts):
@@ -52,13 +89,23 @@ function ai_image_can_generate(): bool {
 function ai_image_generate(array $opts): array {
   $uid = (int)($opts['user_id'] ?? 0);
   $userName = trim((string)($opts['user_name'] ?? ''));
-  $kind = trim((string)($opts['award_kind'] ?? ''));
+  $kindRaw = trim((string)($opts['award_kind'] ?? ''));
   $milestone = (int)($opts['milestone_value'] ?? 0);
   $force = (bool)($opts['force'] ?? false);
 
-  if ($uid <= 0 || $userName === '' || $kind === '' || $milestone <= 0) {
+  if ($uid <= 0 || $userName === '' || $kindRaw === '' || $milestone <= 0) {
     return ['ok'=>false, 'error'=>'bad_input'];
   }
+
+  $ctx = ai_image_unit_context($kindRaw, $milestone);
+  $kind = $ctx['kind'];
+  $sectionLabel = $ctx['sectionLabel'];
+  $unitTitle = $ctx['unitTitle'];
+  $unitTitleLower = $ctx['unitTitleLower'];
+  $unitUpper = $ctx['unitUpper'];
+  $milestoneNum = $ctx['milestoneNum'];
+  $milestoneText = $ctx['milestoneText'];
+  $bannerText = $ctx['bannerText'];
 
   if (!ai_image_can_generate()) {
     $ai = (string)setting_get('ai.enabled', '1');
@@ -67,6 +114,23 @@ function ai_image_generate(array $opts): array {
     ai_image_log_event($uid, $userName, $kind, $milestone, 'skipped', $reason, 'fallback', null, null, null, null);
     return ['ok'=>true, 'skipped'=>true, 'reason'=>$reason];
   }
+
+  $label = award_label($kind, $milestone);
+
+  $templateVars = [
+    'userName' => $userName,
+    'awardKind' => $kind,
+    'awardLabel' => $sectionLabel,
+    'sectionLabel' => $sectionLabel,
+    'milestone' => $milestoneText,
+    'milestoneValue' => $milestone,
+    'milestoneNumber' => $milestoneNum,
+    'bannerText' => $bannerText,
+    'unitTitle' => $unitTitle,
+    'unitTitleLower' => $unitTitleLower,
+    'unitUpper' => $unitUpper,
+    'badgeLabel' => $label,
+  ];
 
   // 24h idempotency: reuse the latest recent file if present unless force
   if (!$force) {
@@ -77,13 +141,13 @@ function ai_image_generate(array $opts): array {
         'provider' => 'reuse',
         'model' => null,
         'cost_usd' => null,
+        'vars' => $templateVars,
       ];
       ai_image_log_event($uid, $userName, $kind, $milestone, 'ok', 'reused_recent', 'reuse', null, null, $recent['abs'], $recent['rel']);
       return ['ok'=>true, 'path'=>$recent['url'], 'meta'=>$meta];
     }
   }
 
-  $label = award_label($kind, $milestone);
   $userData = $opts['user'] ?? null;
   if (!is_array($userData)) {
     $userData = ['name' => $userName];
@@ -92,7 +156,14 @@ function ai_image_generate(array $opts): array {
       $userData['name'] = $userName;
     }
   }
-  $prompt = build_lifetime_award_prompt($userData, $label, $milestone);
+  $prompt = build_award_prompt($kind, $userData, $label, $milestone, [
+    'displayAwardLabel' => $sectionLabel,
+    'milestoneText' => $milestoneText,
+    'bannerText' => $bannerText,
+    'unitTitle' => $unitTitle,
+    'unitTitleLower' => $unitTitleLower,
+    'unitUpper' => $unitUpper,
+  ]);
   
   $provider = strtolower((string)setting_get('ai.image.provider', 'local'));
   $model = (string)setting_get('ai.image.model', '');
@@ -105,7 +176,13 @@ function ai_image_generate(array $opts): array {
   if (!is_dir($dirAbs)) { @mkdir($dirAbs, 0775, true); }
 
   // Try provider if configured (currently stubbed for future expansion)
-  $meta = ['prompt'=>$prompt, 'provider'=>$provider, 'model'=>$model ?: null, 'cost_usd'=>null];
+  $meta = [
+    'prompt'=>$prompt,
+    'provider'=>$provider,
+    'model'=>$model ?: null,
+    'cost_usd'=>null,
+    'vars'=>$templateVars,
+  ];
 
   try {
     if ($provider !== 'local' && $model !== '' && ai_image_has_provider()) {
@@ -307,10 +384,21 @@ function ai_image_slug(string $s): string {
 }
 
 /**
- * Build enhanced prompt for lifetime step awards based on user interests.
+ * Build enhanced prompt for AI award generation with optional kind-specific wording.
  * Randomly selects ONE interest from comma-separated list.
  */
-function build_lifetime_award_prompt(array $user, string $awardLabel, int $milestone): string {
+function build_award_prompt(string $kind, array $user, string $awardLabel, int $milestone, array $extras = []): string {
+  $ctx = ai_image_unit_context($kind, $milestone);
+  $isAttendance = $ctx['isAttendance'];
+
+  $displayAwardLabel = $extras['displayAwardLabel'] ?? $ctx['sectionLabel'];
+  $milestoneText = $extras['milestoneText'] ?? ($ctx['milestoneNum'] . ' ' . $ctx['unitTitle']);
+  $bannerText = $extras['bannerText'] ?? $ctx['bannerText'];
+  $unitLabel = $extras['unitTitle'] ?? $ctx['unitTitle'];
+  $unitLabelLower = $extras['unitTitleLower'] ?? strtolower($unitLabel);
+  $unitLabelUpper = $extras['unitUpper'] ?? strtoupper($unitLabel);
+  $milestoneFormatted = number_format($milestone);
+
   $userName = (string)($user['name'] ?? 'Walker');
   $interests = trim((string)($user['interests'] ?? ''));
 
@@ -334,6 +422,12 @@ function build_lifetime_award_prompt(array $user, string $awardLabel, int $miles
     default => 'gold medal motif, radiant gradients, joyful sparks'
   };
 
+  $achievementPhrase = $isAttendance
+    ? sprintf('%s has reported %s lifetime attendance days (%s).', $userName, $milestoneFormatted, $displayAwardLabel)
+    : sprintf('%s has reached %s lifetime steps (%s).', $userName, $milestoneFormatted, $displayAwardLabel);
+
+  $achievementDescriptor = $isAttendance ? 'lifetime attendance' : 'lifetime walking';
+
   $promptsJson = setting_get('ai.image.prompts.lifetime', '');
   if ($promptsJson) {
     try {
@@ -347,9 +441,16 @@ function build_lifetime_award_prompt(array $user, string $awardLabel, int $miles
             // Replace placeholders
             $text = str_replace('{userName}', $userName, $text);
             $text = str_replace('{milestone}', number_format($milestone), $text);
-            $text = str_replace('{awardLabel}', $awardLabel, $text);
+            $text = str_replace('{milestoneText}', $milestoneText, $text);
+            $text = str_replace('{bannerText}', $bannerText, $text);
+            $text = str_replace('{awardLabel}', $displayAwardLabel, $text);
+            $text = str_replace('{awardBadgeLabel}', $awardLabel, $text);
+            $text = str_replace('{milestoneLabel}', $awardLabel, $text);
             $text = str_replace('{interestText}', $interestText, $text);
             $text = str_replace('{styleHint}', $styleHint, $text);
+            $text = str_replace('{unitLabel}', $unitLabel, $text);
+            $text = str_replace('{unitLabelLower}', $unitLabelLower, $text);
+            $text = str_replace('{unitLabelUpper}', $unitLabelUpper, $text);
             return $text;
           }
         }
@@ -360,22 +461,17 @@ function build_lifetime_award_prompt(array $user, string $awardLabel, int $miles
   }
 
   // Fallback to original hardcoded prompt
-  return sprintf(
-    "Design a breathtaking digital award image celebrating a lifetime walking achievement.
-     %s has reached %s lifetime steps (%s).
-     Create a highly detailed, imaginative emblem that visually represents their personality and interest: %s.
-     Use luminous color, depth, and storytelling elements.
-     Capture the feeling of epic accomplishment, motion, and personal triumph.
-     Composition: centered emblem, cinematic lighting, subtle text 'Lifetime %s Steps'.
-     No faces or photo realism. Square 1024x1024 ratio.
-     Style: digital painting + vector hybrid, vivid and collectible. Style hint: %s.",
-    $userName,
-    number_format($milestone),
-    $awardLabel,
-    $interestText,
-    number_format($milestone),
-    $styleHint
-  );
+  $lines = [
+    "Design a breathtaking digital award image celebrating a {$achievementDescriptor} achievement.",
+    $achievementPhrase,
+    "Create a highly detailed, imaginative emblem that visually represents their personality and interest: {$interestText}.",
+    "Use luminous color, depth, and storytelling elements.",
+    "Capture the feeling of epic accomplishment, motion, and personal triumph.",
+    "Composition: centered emblem, cinematic lighting, subtle text '{$bannerText}'.",
+    "No faces or photo realism. Square 1024x1024 ratio.",
+    "Style: digital painting + vector hybrid, vivid and collectible. Style hint: {$styleHint}.",
+  ];
+  return implode("\n", $lines);
 }
 
 /**
