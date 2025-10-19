@@ -55,6 +55,12 @@ function ai_image_unit_context(string $kind, int $milestone): array {
   $unitTitle = $isAttendance ? 'Days' : 'Steps';
   $unitUpper = strtoupper($unitTitle);
   $unitLower = strtolower($unitTitle);
+  $unitSingular = rtrim($unitTitle, 's');
+  if ($unitSingular === '') {
+    $unitSingular = $unitTitle;
+  }
+  $unitSingularLower = strtolower($unitSingular);
+  $unitSingularUpper = strtoupper($unitSingular);
   $milestoneNum = number_format(max(0, $milestone));
 
   return [
@@ -64,10 +70,33 @@ function ai_image_unit_context(string $kind, int $milestone): array {
     'unitTitle' => $unitTitle,
     'unitTitleLower' => $unitLower,
     'unitUpper' => $unitUpper,
+    'unitSingular' => $unitSingular,
+    'unitSingularLower' => $unitSingularLower,
+    'unitSingularUpper' => $unitSingularUpper,
     'milestoneNum' => $milestoneNum,
     'milestoneText' => trim($milestoneNum . ' ' . $unitTitle),
     'bannerText' => "LIFETIME {$milestoneNum} {$unitUpper}",
   ];
+}
+
+/**
+ * Match replacement word casing to the original token.
+ */
+function ai_image_match_case(string $replacement, string $original): string {
+  if ($original === '') return $replacement;
+  if (mb_strtoupper($original, 'UTF-8') === $original) {
+    return mb_strtoupper($replacement, 'UTF-8');
+  }
+  if (mb_strtolower($original, 'UTF-8') === $original) {
+    return mb_strtolower($replacement, 'UTF-8');
+  }
+  $lowerReplacement = mb_strtolower($replacement, 'UTF-8');
+  if (mb_strtoupper(mb_substr($original, 0, 1, 'UTF-8'), 'UTF-8') .
+      mb_strtolower(mb_substr($original, 1, null, 'UTF-8'), 'UTF-8') === $original) {
+    return mb_strtoupper(mb_substr($lowerReplacement, 0, 1, 'UTF-8'), 'UTF-8') .
+           mb_substr($lowerReplacement, 1, null, 'UTF-8');
+  }
+  return $replacement;
 }
 
 /**
@@ -103,6 +132,9 @@ function ai_image_generate(array $opts): array {
   $unitTitle = $ctx['unitTitle'];
   $unitTitleLower = $ctx['unitTitleLower'];
   $unitUpper = $ctx['unitUpper'];
+  $unitSingular = $ctx['unitSingular'];
+  $unitSingularLower = $ctx['unitSingularLower'];
+  $unitSingularUpper = $ctx['unitSingularUpper'];
   $milestoneNum = $ctx['milestoneNum'];
   $milestoneText = $ctx['milestoneText'];
   $bannerText = $ctx['bannerText'];
@@ -129,6 +161,9 @@ function ai_image_generate(array $opts): array {
     'unitTitle' => $unitTitle,
     'unitTitleLower' => $unitTitleLower,
     'unitUpper' => $unitUpper,
+    'unitSingular' => $unitSingular,
+    'unitSingularLower' => $unitSingularLower,
+    'unitSingularUpper' => $unitSingularUpper,
     'badgeLabel' => $label,
   ];
 
@@ -163,6 +198,9 @@ function ai_image_generate(array $opts): array {
     'unitTitle' => $unitTitle,
     'unitTitleLower' => $unitTitleLower,
     'unitUpper' => $unitUpper,
+    'unitSingular' => $unitSingular,
+    'unitSingularLower' => $unitSingularLower,
+    'unitSingularUpper' => $unitSingularUpper,
   ]);
   
   $provider = strtolower((string)setting_get('ai.image.provider', 'local'));
@@ -397,6 +435,9 @@ function build_award_prompt(string $kind, array $user, string $awardLabel, int $
   $unitLabel = $extras['unitTitle'] ?? $ctx['unitTitle'];
   $unitLabelLower = $extras['unitTitleLower'] ?? strtolower($unitLabel);
   $unitLabelUpper = $extras['unitUpper'] ?? strtoupper($unitLabel);
+  $unitSingular = $extras['unitSingular'] ?? $ctx['unitSingular'];
+  $unitSingularLower = $extras['unitSingularLower'] ?? $ctx['unitSingularLower'];
+  $unitSingularUpper = $extras['unitSingularUpper'] ?? $ctx['unitSingularUpper'];
   $milestoneFormatted = number_format($milestone);
 
   $userName = (string)($user['name'] ?? 'Walker');
@@ -451,6 +492,22 @@ function build_award_prompt(string $kind, array $user, string $awardLabel, int $
             $text = str_replace('{unitLabel}', $unitLabel, $text);
             $text = str_replace('{unitLabelLower}', $unitLabelLower, $text);
             $text = str_replace('{unitLabelUpper}', $unitLabelUpper, $text);
+            $text = str_replace('{unitSingular}', $unitSingular, $text);
+            $text = str_replace('{unitSingularLower}', $unitSingularLower, $text);
+            $text = str_replace('{unitSingularUpper}', $unitSingularUpper, $text);
+
+            $milestoneRegex = preg_quote($milestoneFormatted, '/');
+
+            if ($isAttendance) {
+              $text = preg_replace_callback('/\\bsteps\\b/i', fn($m) => ai_image_match_case($unitLabel, $m[0]), $text);
+              $text = preg_replace_callback('/\\bstep\\b/i', fn($m) => ai_image_match_case($unitSingular, $m[0]), $text);
+              $text = preg_replace_callback('/\\bLifetime\\s+' . $milestoneRegex . '\\s+steps\\b/i', fn($m) => ai_image_match_case('Lifetime ' . $milestoneFormatted . ' ' . $unitLabel, $m[0]), $text);
+              $text = preg_replace_callback('/\\bLIFETIME\\s+' . $milestoneRegex . '\\s+STEPS\\b/', fn($m) => 'LIFETIME ' . $milestoneFormatted . ' ' . $unitUpper, $text);
+            } else {
+              $text = preg_replace_callback('/\\bdays\\b/i', fn($m) => ai_image_match_case($unitLabel, $m[0]), $text);
+              $text = preg_replace_callback('/\\bday\\b/i', fn($m) => ai_image_match_case($unitSingular, $m[0]), $text);
+            }
+
             return $text;
           }
         }

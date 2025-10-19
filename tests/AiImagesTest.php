@@ -44,6 +44,10 @@ final class AiImagesTest extends TestCase
         $this->assertSame('LIFETIME 100,000 STEPS', $vars['bannerText'] ?? null);
         $this->assertSame('100,000 Steps', $vars['milestone'] ?? null);
         $this->assertSame('Lifetime Steps', $vars['awardLabel'] ?? null);
+
+        $prompt = (string)($meta['prompt'] ?? '');
+        $this->assertNotSame('', $prompt, 'Prompt should be recorded in metadata');
+        $this->assertStringContainsString('Steps', $prompt);
     }
 
     public function testCanGenerateDisabledFlags(): void
@@ -75,6 +79,11 @@ final class AiImagesTest extends TestCase
         $this->assertSame('Lifetime Attendance', $vars['awardLabel'] ?? null);
         $this->assertSame('Days', $vars['unitTitle'] ?? null);
         $this->assertSame('DAYS', $vars['unitUpper'] ?? null);
+
+        $prompt = (string)($meta['prompt'] ?? '');
+        $this->assertNotSame('', $prompt, 'Prompt should be recorded in metadata');
+        $this->assertStringContainsString('Days', $prompt);
+        $this->assertStringNotContainsString('Steps', $prompt, 'Attendance prompt should not refer to steps');
     }
 
     public function testAttendanceAliasNormalizesToDays(): void
