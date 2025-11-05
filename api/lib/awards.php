@@ -233,6 +233,7 @@ function get_lifetime_awards(PDO $pdo, int $userId): array {
         $thumbUrl = $imageUrl; // Use same image for thumb (no separate thumbs directory)
         
         $award = [
+            'kind' => 'lifetime_steps',
             'key' => $key,
             'threshold' => $threshold,
             'earned' => $earned,
@@ -416,6 +417,7 @@ function get_attendance_days_awards(PDO $pdo, int $userId, ?array $customThresho
         }
 
         $awards[] = [
+            'kind' => 'attendance_days',
             'key' => $key,
             'threshold' => $threshold,
             'earned' => $earned,

@@ -52,22 +52,42 @@ class SmsController
             });
         };
 
-        $auth = env('TWILIO_AUTH_TOKEN','');
+        $primaryAuth = env('TWILIO_AUTH_TOKEN', '');
+        $fallbackAuth = env('TWILIO_AUTH_TOKEN_FALLBACK', '');
+        $authTokens = array_values(array_filter(array_unique([$primaryAuth, $fallbackAuth])));
         $is_twilio = isset($_SERVER['HTTP_X_TWILIO_SIGNATURE']);
-        if (!$this->isInternalRequest() && $auth !== '') {
+        if (!$this->isInternalRequest() && !empty($authTokens)) {
             $url = TwilioSignature::buildTwilioUrl();
-            $ok = TwilioSignature::verify($_POST, $url, $auth);
-            if (!$ok) {
+            $verified = false;
+            $usedToken = null;
+            foreach ($authTokens as $token) {
+                if (TwilioSignature::verify($_POST, $url, $token)) {
+                    $verified = true;
+                    $usedToken = $token;
+                    break;
+                }
+            }
+
+            if (!$verified) {
                 $logDir = dirname(__DIR__, 2) . '/data/logs';
                 if (!is_dir($logDir)) {
                     @mkdir($logDir, 0775, true);
                 }
-                $expected = TwilioSignature::computeSignature($_POST, $url, $auth);
+                [$expected, $sigString] = TwilioSignature::debugSignature($_POST, $url, $primaryAuth ?: $fallbackAuth);
+                $tokenHashes = [];
+                foreach ($authTokens as $token) {
+                    $tokenHashes[] = $token === '' ? '' : substr(hash('sha256', $token), 0, 16);
+                }
                 $logPayload = [
                     'at' => $now->format(\DateTime::ATOM),
                     'url' => $url,
                     'expected' => $expected,
                     'header' => $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '',
+                    'sig_string' => $sigString,
+                    'used_token_hash' => $usedToken ? substr(hash('sha256', $usedToken), 0, 16) : null,
+                    'raw_tokens' => $authTokens,
+                    'token_hashes' => $tokenHashes,
+                    'token_count' => count($authTokens),
                     'host' => $_SERVER['HTTP_HOST'] ?? '',
                     'forwarded_host' => $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '',
                     'forwarded_proto' => $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '',
@@ -83,6 +103,12 @@ class SmsController
                 echo json_encode(['error'=>'bad_signature']);
                 exit;
             }
+        } elseif (empty($authTokens) && !$this->isInternalRequest()) {
+            // No tokens configured: respond with configuration error.
+            $audit_exec([$createdAt,$e164,$body,null,null,null,null,'missing_auth_token']);
+            http_response_code(500);
+            echo json_encode(['error'=>'missing_auth_token']);
+            exit;
         }
 
         if (!$e164 || $body==='') {

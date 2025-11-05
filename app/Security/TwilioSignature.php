@@ -43,13 +43,28 @@ class TwilioSignature
             return '';
         }
 
+        [$signature] = self::signData($request, $url, $authToken);
+        return $signature;
+    }
+
+    /**
+     * Internal: returns [signature, dataString] to aid debugging.
+     */
+    public static function debugSignature(array $request, string $url, string $authToken): array
+    {
+        return self::signData($request, $url, $authToken);
+    }
+
+    private static function signData(array $request, string $url, string $authToken): array
+    {
         $data = $url;
         ksort($request, SORT_STRING);
         foreach ($request as $key => $value) {
             $data .= $key . $value;
         }
 
-        return base64_encode(hash_hmac('sha1', $data, $authToken, true));
+        $sig = base64_encode(hash_hmac('sha1', $data, $authToken, true));
+        return [$sig, $data];
     }
 
     /**

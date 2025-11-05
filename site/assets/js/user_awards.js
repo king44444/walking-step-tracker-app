@@ -2,10 +2,20 @@
  * User Awards System - Grid rendering and lightbox gallery
  */
 
-let awardsData = [];
 let currentAwardIndex = 0;
 let earnedAwards = [];
 let touchStartX = 0;
+
+const SECTION_CONFIG = {
+  lifetime_steps: {
+    containerId: 'awards-grid-steps',
+    emptyMessage: 'No lifetime step awards earned yet.',
+  },
+  attendance_days: {
+    containerId: 'awards-grid-attendance',
+    emptyMessage: 'No lifetime attendance awards earned yet.',
+  },
+};
 
 /**
  * Initialize the awards system for a user
@@ -14,9 +24,8 @@ async function initUserAwards(userId) {
   showSkeletonLoader();
   
   try {
-    const awards = await fetchAwards(userId);
-    awardsData = awards;
-    renderAwardsGrid(awards);
+    const sections = await fetchAwards(userId);
+    renderAwardSections(sections);
     initLightbox();
   } catch (error) {
     console.error('Failed to load awards:', error);
@@ -40,52 +49,64 @@ async function fetchAwards(userId) {
     throw new Error(data.error);
   }
   
-  return data;
+  if (Array.isArray(data.sections)) {
+    return data.sections;
+  }
+
+  return [];
 }
 
 /**
- * Render the awards grid
+ * Render award sections into their containers
  */
-function renderAwardsGrid(awards) {
-  const container = document.getElementById('awards-grid');
+function renderAwardSections(sections) {
+  earnedAwards = [];
+
+  const list = Array.isArray(sections) ? sections : [];
+
+  Object.entries(SECTION_CONFIG).forEach(([kind, config]) => {
+    const section = list.find(sec => (sec.kind || sec.id) === kind) || null;
+    renderAwardSection(section, config);
+  });
+}
+
+/**
+ * Render a single award section
+ */
+function renderAwardSection(section, config) {
+  const container = document.getElementById(config.containerId);
   if (!container) return;
-  
-  // Only show earned awards on the profile page
-  const earnedOnly = (awards || []).filter(a => a && a.earned).sort((a, b) => a.threshold - b.threshold);
-  
-  // Prepare earnedAwards for the lightbox (ordered)
-  earnedAwards = earnedOnly;
-  
+
+  const awards = Array.isArray(section?.awards) ? section.awards : [];
+  const earnedOnly = awards
+    .filter(a => a && a.earned)
+    .sort((a, b) => a.threshold - b.threshold);
+
   if (earnedOnly.length === 0) {
-    container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: rgba(230, 236, 255, 0.6);">
-        No lifetime awards earned yet.
-      </div>
-    `;
+    renderEmptyState(container, config.emptyMessage);
     return;
   }
-  
-  container.innerHTML = earnedOnly.map((award, index) => {
+
+  container.innerHTML = earnedOnly.map(award => {
+    const globalIndex = registerEarnedAward(award);
     const statusClass = 'earned';
     const countText = (typeof award.count === 'number' && award.count > 0) ? ` · ${award.count}x` : '';
     const statusText = award.awarded_at
       ? `Earned · ${formatDate(award.awarded_at)}${countText}`
       : `Earned${countText}`;
-    
-    const clickable = `onclick="openLightbox(${index})"`;
-    const tabindex = '0';
+    const imageSrc = award.thumb_url || award.image_url || 'assets/admin/no-photo.svg';
     const ariaLabel = `Open award ${award.title}${award.awarded_at ? ', earned ' + formatDate(award.awarded_at) : ''}`;
-    
+
     return `
       <button 
         class="award-card ${statusClass}" 
-        ${clickable}
-        tabindex="${tabindex}"
+        onclick="openLightbox(${globalIndex})"
+        tabindex="0"
         aria-label="${ariaLabel}"
-        onkeydown="handleCardKeydown(event, ${index})"
+        onkeydown="handleCardKeydown(event, ${globalIndex})"
       >
         <img 
-          src="${award.thumb_url}" 
+          src="${imageSrc}" 
           alt="${award.title}"
           class="award-image"
           onerror="handleImageError(this)"
@@ -96,6 +117,29 @@ function renderAwardsGrid(awards) {
       </button>
     `;
   }).join('');
+}
+
+function registerEarnedAward(award) {
+  earnedAwards.push(award);
+  return earnedAwards.length - 1;
+}
+
+function renderEmptyState(container, message) {
+  container.innerHTML = `
+    <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: rgba(230, 236, 255, 0.6);">
+      ${message}
+    </div>
+  `;
+}
+
+function buildSkeletonMarkup() {
+  return Array(5).fill(0).map(() => `
+    <div class="award-skeleton">
+      <div class="award-skeleton-image"></div>
+      <div class="award-skeleton-title"></div>
+      <div class="award-skeleton-status"></div>
+    </div>
+  `).join('');
 }
 
 /**
@@ -112,30 +156,22 @@ function handleCardKeydown(event, awardIndex) {
  * Show skeleton loader while fetching
  */
 function showSkeletonLoader() {
-  const container = document.getElementById('awards-grid');
-  if (!container) return;
-  
-  container.innerHTML = Array(5).fill(0).map(() => `
-    <div class="award-skeleton">
-      <div class="award-skeleton-image"></div>
-      <div class="award-skeleton-title"></div>
-      <div class="award-skeleton-status"></div>
-    </div>
-  `).join('');
+  Object.values(SECTION_CONFIG).forEach(config => {
+    const container = document.getElementById(config.containerId);
+    if (!container) return;
+    container.innerHTML = buildSkeletonMarkup();
+  });
 }
 
 /**
  * Show error message
  */
 function showError(message) {
-  const container = document.getElementById('awards-grid');
-  if (!container) return;
-  
-  container.innerHTML = `
-    <div style="grid-column: 1 / -1; text-align: center; padding: 2rem; color: rgba(230, 236, 255, 0.6);">
-      ${message}
-    </div>
-  `;
+  Object.values(SECTION_CONFIG).forEach(config => {
+    const container = document.getElementById(config.containerId);
+    if (!container) return;
+    renderEmptyState(container, message);
+  });
 }
 
 /**

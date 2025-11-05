@@ -329,7 +329,18 @@ function asset($p){ return htmlspecialchars((string)$p, ENT_QUOTES, 'UTF-8'); }
       <div class="card p-4">
         <div class="kicker">Awards</div>
         <h3 class="text-xl font-bold">Lifetime Awards</h3>
-        <div id="awards-grid"></div>
+        <div class="space-y-5 mt-4">
+          <div>
+            <h4 class="text-lg font-semibold">Lifetime Steps</h4>
+            <p class="text-sm text-white/60">Lifetime step milestones</p>
+            <div id="awards-grid-steps" class="awards-grid"></div>
+          </div>
+          <div class="pt-1 border-t border-white/10">
+            <h4 class="text-lg font-semibold">Lifetime Attendance</h4>
+            <p class="text-sm text-white/60">Days reported / checked in</p>
+            <div id="awards-grid-attendance" class="awards-grid"></div>
+          </div>
+        </div>
       </div>
     </section>
   </main>

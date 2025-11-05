@@ -46,11 +46,30 @@ try {
         exit;
     }
     
-    // Get awards
-    $awards = get_lifetime_awards($pdo, $userId);
-    
-    // Return success response
-    echo json_encode($awards, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    // Get award collections
+    $stepAwards = get_lifetime_awards($pdo, $userId);
+    $attendanceAwards = get_attendance_days_awards($pdo, $userId);
+
+    $response = [
+        'sections' => [
+            [
+                'id' => 'lifetime_steps',
+                'title' => 'Lifetime Steps',
+                'subtitle' => 'Lifetime step milestones',
+                'kind' => 'lifetime_steps',
+                'awards' => $stepAwards,
+            ],
+            [
+                'id' => 'attendance_days',
+                'title' => 'Lifetime Attendance',
+                'subtitle' => 'Days reported / checked in',
+                'kind' => 'attendance_days',
+                'awards' => $attendanceAwards,
+            ],
+        ],
+    ];
+
+    echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     
 } catch (Throwable $e) {
     error_log('user_awards.php error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());

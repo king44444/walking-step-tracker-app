@@ -27,6 +27,17 @@ try {
     // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps' => setting_get('milestones.lifetime_steps', '100000,250000,500000,750000,1000000'),
     'milestones.attendance_days' => setting_get('milestones.attendance_days', '175,350,700'),
+    // SMS + reminder settings
+    'sms.admin_prefix_enabled' => setting_get('sms.admin_prefix_enabled', '0'),
+    'sms.admin_password' => setting_get('sms.admin_password', ''),
+    'app.public_base_url' => setting_get('app.public_base_url', ''),
+    'sms.inbound_rate_window_sec' => setting_get('sms.inbound_rate_window_sec', ''),
+    'sms.ai_rate_window_sec' => setting_get('sms.ai_rate_window_sec', ''),
+    'sms.backfill_days' => setting_get('sms.backfill_days', ''),
+    'reminders.default_morning' => setting_get('reminders.default_morning', ''),
+    'reminders.default_evening' => setting_get('reminders.default_evening', ''),
+    // AI image prompts
+    'ai.image.prompts.lifetime' => setting_get('ai.image.prompts.lifetime', '[]'),
   ];
   echo json_encode($resp);
 } catch (Throwable $e) {

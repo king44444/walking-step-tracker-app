@@ -44,7 +44,18 @@ try {
     'daily.milestones',
     // Milestone settings returned as comma-separated strings for the admin UI
     'milestones.lifetime_steps',
-    'milestones.attendance_days'
+    'milestones.attendance_days',
+    // SMS + reminder configuration (admin UI)
+    'sms.admin_prefix_enabled',
+    'sms.admin_password',
+    'app.public_base_url',
+    'sms.inbound_rate_window_sec',
+    'sms.ai_rate_window_sec',
+    'sms.backfill_days',
+    'reminders.default_morning',
+    'reminders.default_evening',
+    // AI image prompt configuration
+    'ai.image.prompts.lifetime',
   ];
   if (!in_array($key, $allowed, true)) { http_response_code(400); echo json_encode(['error'=>'bad_key']); exit; }
   $val = $in['value'] ?? null;
