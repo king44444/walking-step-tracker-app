@@ -11,6 +11,9 @@ $pdo = pdo();
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 $csrfToken = \App\Security\Csrf::token();
 
+$info = '';
+$err = '';
+
 if ($_SERVER['REQUEST_METHOD']==='POST') {
   // CSRF validate
   require_once __DIR__ . '/../app/Security/Csrf.php';
@@ -30,8 +33,19 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
   } elseif ($action==='clear') {
     $st = $pdo->prepare("UPDATE users SET phone_e164=NULL WHERE name=?");
     $st->execute([$name]);
+  } elseif ($action==='disable_all_reminders') {
+    try {
+      $st = $pdo->prepare("UPDATE users SET reminders_enabled=0 WHERE reminders_enabled=1");
+      $st->execute();
+      $count = $st->rowCount();
+      $info = "Successfully disabled reminders for {$count} user(s).";
+    } catch (Exception $e) {
+      $err = "Failed to disable reminders: " . $e->getMessage();
+    }
   }
-  header('Location: phones.php'); exit;
+  if ($action !== 'disable_all_reminders') {
+    header('Location: phones.php'); exit;
+  }
 }
 
 $rows = $pdo->query("SELECT name, COALESCE(phone_e164,'') AS phone_e164 FROM users ORDER BY LOWER(name)")->fetchAll(PDO::FETCH_ASSOC);
@@ -56,6 +70,10 @@ $rows = $pdo->query("SELECT name, COALESCE(phone_e164,'') AS phone_e164 FROM use
     th, td { padding:8px; border-top:1px solid rgba(255,255,255,0.08); text-align:left; }
     .nav { display:flex; flex-wrap:wrap; gap:8px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; }
+    .ok { color:#7ce3a1; font-weight:600; }
+    .err { color:#f79; font-weight:600; }
+    .btn.danger { background:#7a1a1a; border-color:#a33; color:#fff; }
+    .btn.danger:hover { background:#8a2a2a; }
   </style>
 </head>
 <body>
@@ -76,6 +94,20 @@ $rows = $pdo->query("SELECT name, COALESCE(phone_e164,'') AS phone_e164 FROM use
         <a class="btn" href="../site/">Dashboard</a>
       </div>
     </div>
+    <?php if($info): ?><div class="ok" style="margin:8px 0"><?=$info?></div><?php endif; ?>
+    <?php if($err): ?><div class="err" style="margin:8px 0"><?=$err?></div><?php endif; ?>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 12px 0">Reminder Controls</h2>
+    <form method="post" style="display:inline" onsubmit="return confirm('This will disable reminders for ALL users. Are you sure?');">
+      <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrfToken) ?>" />
+      <input type="hidden" name="action" value="disable_all_reminders" />
+      <button class="btn danger" type="submit">Disable All Reminders</button>
+    </form>
+    <p style="margin:8px 0 0 0; font-size:13px; color:#999;">
+      This will set reminders_enabled=0 for all users. Users will stop receiving scheduled reminder SMS messages.
+    </p>
   </div>
 
   <div class="card">
