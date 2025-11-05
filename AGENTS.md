@@ -9,6 +9,30 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 2. Then commit: `git add -A && git commit -m "Description" && git push`
 3. Never skip these steps after modifying code
 
+## Agent Workflow & Documentation Protocol
+
+**When completing work as an agent:**
+
+1. **Update CHANGELOG.md**
+   - Document significant changes, features, or bug fixes
+   - Use semantic versioning format (MAJOR.MINOR.PATCH)
+   - Include date and brief description of changes
+
+2. **Working with PROMPTS.md**
+   - If implementing a prompt from PROMPTS.md:
+     - Mark the current prompt as **COMPLETED** when finished
+     - Add completion notes with results and verification details
+     - Update to the next prompt in the queue if applicable
+   - Commit message MUST reference the prompt being completed
+   - Include notes about what was accomplished and verified
+
+3. **Commit Protocol**
+   - ALWAYS commit at the end of work sessions
+   - Use author ID: 'King'
+   - Format: `git commit --author="King <king@example.com>" -m "Description"`
+   - For prompt work: Reference the prompt in commit message
+     - Example: `"Complete Prompt: Numeric step replies footer fix - Added footer to all numeric SMS responses"`
+
 ## Quick Deploy & Debug via SSH
 
 ### Deploy to Server
