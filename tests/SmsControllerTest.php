@@ -20,6 +20,7 @@ class SmsControllerTest extends TestCase
                 id INTEGER PRIMARY KEY,
                 created_at TEXT,
                 from_number TEXT,
+                target_user_name TEXT,
                 raw_body TEXT,
                 parsed_day TEXT,
                 parsed_steps INTEGER,
@@ -396,5 +397,63 @@ class SmsControllerTest extends TestCase
         $stmt->execute(['+1234567890']);
         $optedOut = $stmt->fetchColumn();
         $this->assertEquals('1', $optedOut);
+    }
+
+    public function testNamePrefixParsing()
+    {
+        // Set up test users
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164) VALUES(1, 'Alice', '+1111111111')")
+                  ->execute();
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164) VALUES(2, 'Bob', '+1222222222')")
+                  ->execute();
+        $this->pdo->prepare("INSERT INTO users(id, name, phone_e164) VALUES(3, 'Nikki', '+1333333333')")
+                  ->execute();
+
+        // Test that users were created
+        $count = $this->pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+        $this->assertEquals(3, $count);
+
+        // Test case-insensitive name lookup
+        $stmt = $this->pdo->prepare("SELECT name FROM users WHERE LOWER(name) = LOWER(?)");
+        $stmt->execute(['nikki']);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $this->assertEquals('Nikki', $result['name']);
+
+        // Test name lookup with different case
+        $stmt->execute(['ALICE']);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $this->assertEquals('Alice', $result['name']);
+    }
+
+    public function testNamePrefixPatternMatching()
+    {
+        // Test the pattern matching for name prefix extraction
+        $testCases = [
+            'nikki fri 3345' => ['name' => 'nikki', 'remainder' => 'fri 3345'],
+            'Ben 250' => ['name' => 'Ben', 'remainder' => '250'],
+            'ALICE monday 1000' => ['name' => 'ALICE', 'remainder' => 'monday 1000'],
+            'bob 500 tue' => ['name' => 'bob', 'remainder' => '500 tue'],
+            '3345' => null,  // No name prefix
+            'fri 3345' => ['name' => 'fri', 'remainder' => '3345'],  // This would match pattern but may not be a valid user
+        ];
+
+        foreach ($testCases as $input => $expected) {
+            if (preg_match('/^\s*([A-Za-z]+)\s+(.+)$/i', $input, $m)) {
+                $potentialName = $m[1];
+                $remainder = $m[2];
+                $this->assertEquals($expected['name'], $potentialName, "Failed for input: $input");
+                $this->assertEquals($expected['remainder'], $remainder, "Failed for input: $input");
+            } else {
+                $this->assertNull($expected, "Pattern should not match for: $input");
+            }
+        }
+    }
+
+    public function testTargetUserNameColumnExists()
+    {
+        // Verify the target_user_name column exists in sms_audit table
+        $result = $this->pdo->query("PRAGMA table_info(sms_audit)")->fetchAll(PDO::FETCH_ASSOC);
+        $columns = array_column($result, 'name');
+        $this->assertContains('target_user_name', $columns);
     }
 }

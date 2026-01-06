@@ -37,7 +37,7 @@ class SmsController
             $ctx['is_admin'] = true;
         }
 
-        $insAudit = $pdo->prepare("INSERT INTO sms_audit(created_at,from_number,raw_body,parsed_day,parsed_steps,resolved_week,resolved_day,status) VALUES(?,?,?,?,?,?,?,?)");
+        $insAudit = $pdo->prepare("INSERT INTO sms_audit(created_at,from_number,target_user_name,raw_body,parsed_day,parsed_steps,resolved_week,resolved_day,status) VALUES(?,?,?,?,?,?,?,?,?)");
 
         $audit_exec = function(array $params) use ($insAudit) {
             with_file_lock(dirname(__DIR__, 2) . '/data/sqlite.write.lock', function() use ($insAudit, $params) {
@@ -98,21 +98,21 @@ class SmsController
                 ];
                 $logPath = $logDir . '/sms_bad_sig.log';
                 file_put_contents($logPath, json_encode($logPayload, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND);
-                $audit_exec([$createdAt,$e164,$body,null,null,null,null,'bad_signature']);
+                $audit_exec([$createdAt,$e164,null,$body,null,null,null,null,'bad_signature']);
                 http_response_code(403);
                 echo json_encode(['error'=>'bad_signature']);
                 exit;
             }
         } elseif (empty($authTokens) && !$this->isInternalRequest()) {
             // No tokens configured: respond with configuration error.
-            $audit_exec([$createdAt,$e164,$body,null,null,null,null,'missing_auth_token']);
+            $audit_exec([$createdAt,$e164,null,$body,null,null,null,null,'missing_auth_token']);
             http_response_code(500);
             echo json_encode(['error'=>'missing_auth_token']);
             exit;
         }
 
         if (!$e164 || $body==='') {
-            $audit_exec([$createdAt,$from,$raw_body,null,null,null,null,'bad_request']);
+            $audit_exec([$createdAt,$from,null,$raw_body,null,null,null,null,'bad_request']);
             $errMsg = 'Sorry, we could not read your number or message. Please try again.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'bad_request', 400);
         }
@@ -123,7 +123,7 @@ class SmsController
         $stRL = $pdo->prepare("SELECT 1 FROM sms_audit WHERE from_number=? AND status='ok' AND created_at>=? LIMIT 1");
         $stRL->execute([$e164, $cut]);
         if ($stRL->fetchColumn()) {
-            $audit_exec([$createdAt,$e164,$body,null,null,null,null,'rate_limited']);
+            $audit_exec([$createdAt,$e164,null,$body,null,null,null,null,'rate_limited']);
             $errMsg = 'Got it! Please wait a minute before sending another update.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'rate_limited', 429);
         }
@@ -133,7 +133,7 @@ class SmsController
         $stU->execute([$e164]);
         $u = $stU->fetch(\PDO::FETCH_ASSOC);
         if (!$u) {
-            $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'unknown_number']);
+            $audit_exec([$createdAt,$e164,null,$raw_body,null,null,null,null,'unknown_number']);
             $errMsg='We do not recognize this number. Ask admin to enroll your phone.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'unknown_number', 404);
         }
@@ -196,9 +196,41 @@ class SmsController
         $body_norm = trim($body_norm);
 
         if (preg_match_all('/\d+/', $body_norm, $mm) && count($mm[0]) > 1) {
-            $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'too_many_numbers']);
+            $audit_exec([$createdAt,$e164,null,$raw_body,null,null,null,null,'too_many_numbers']);
             $errMsg = "Please send one number like 12345 or 'Tue 12345'.";
             \App\Http\Responders\SmsResponder::error($errMsg, 'too_many_numbers', 400);
+        }
+
+        // Parse optional name prefix: [name?] [day?] <steps>
+        $targetUserName = null;
+        $targetUserId = null;
+        $namePrefix = null;
+
+        // Try to extract name prefix if message starts with a word followed by more content
+        if (preg_match('/^\s*([A-Za-z]+)\s+(.+)$/i', $body_norm, $nameMatch)) {
+            $potentialName = $nameMatch[1];
+            $remainder = $nameMatch[2];
+
+            // Check if this looks like a name by querying the users table (case-insensitive)
+            $stName = $pdo->prepare("SELECT id, name, phone_e164 FROM users WHERE LOWER(name) = LOWER(?)");
+            $stName->execute([$potentialName]);
+            $foundUser = $stName->fetch(\PDO::FETCH_ASSOC);
+
+            if ($foundUser) {
+                // Found a matching user, use their exact name from DB and parse remainder
+                $targetUserId = (int)$foundUser['id'];
+                $targetUserName = $foundUser['name'];
+                $targetUserPhone = $foundUser['phone_e164'];
+                $namePrefix = $potentialName;
+                $body_norm = $remainder; // Continue parsing the rest
+            }
+        }
+
+        // If no name prefix was found, use the sender's info
+        if (!$targetUserName) {
+            $targetUserId = $userId;
+            $targetUserName = $name;
+            $targetUserPhone = $e164;
         }
 
         $dayOverride = null; $steps = null;
@@ -210,49 +242,49 @@ class SmsController
         } elseif (preg_match('/^\s*([0-9]{2,})\s*$/', $body_norm, $m)) {
             $steps=intval($m[1]);
         } else {
-            $audit_exec([$createdAt,$e164,$raw_body,null,null,null,null,'no_steps']);
+            $audit_exec([$createdAt,$e164,$targetUserName,$raw_body,null,null,null,null,'no_steps']);
             $errMsg = "Please send one number like 12345 or 'Tue 12345'.";
             \App\Http\Responders\SmsResponder::error($errMsg, 'no_steps', 400);
         }
 
         if ($steps < 0 || $steps > 200000) {
-            $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'invalid_steps']);
+            $audit_exec([$createdAt,$e164,$targetUserName,$raw_body,$dayOverride,$steps,null,null,'invalid_steps']);
             $errMsg='That number looks off. Try a value between 0 and 200,000.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'invalid_steps', 400);
         }
 
         $dayCol = $this->resolveTargetDay($now, $dayOverride);
         if (!$dayCol) {
-            $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,null,'bad_day']);
+            $audit_exec([$createdAt,$e164,$targetUserName,$raw_body,$dayOverride,$steps,null,null,'bad_day']);
             $errMsg='Unrecognized day. Use Mon..Sat or leave it out.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'bad_day', 400);
         }
 
         $week = $this->resolveActiveWeek($pdo);
         if (!$week) {
-            $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,null,$dayCol,'no_active_week']);
+            $audit_exec([$createdAt,$e164,$targetUserName,$raw_body,$dayOverride,$steps,null,$dayCol,'no_active_week']);
             $errMsg='No active week to record to. Please try again later.';
             \App\Http\Responders\SmsResponder::error($errMsg, 'no_active_week', 404);
         }
 
-        Tx::with(function(\PDO $pdo) use ($week, $name, $dayCol, $steps) {
-            $this->upsertSteps($pdo, $week, $name, $dayCol, $steps);
+        Tx::with(function(\PDO $pdo) use ($week, $targetUserName, $dayCol, $steps) {
+            $this->upsertSteps($pdo, $week, $targetUserName, $dayCol, $steps);
         });
-        $audit_exec([$createdAt,$e164,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
+        $audit_exec([$createdAt,$e164,$targetUserName,$raw_body,$dayOverride,$steps,$week,$dayCol,'ok']);
 
         // AI reply processing removed - replaced with opt-in reminder system
         // (AI system still available for other uses but not triggered after step writes)
 
-        // Lifetime award check (best-effort)
+        // Lifetime award check (best-effort) - award goes to the person whose steps were logged
         try {
-            $this->handleLifetimeAward($pdo, $userId, $name, $e164);
+            $this->handleLifetimeAward($pdo, $targetUserId, $targetUserName, $targetUserPhone);
         } catch (\Throwable $e) {
             error_log('SmsController::inbound lifetime award error: ' . $e->getMessage());
             // Continue with confirmation SMS even if award fails
         }
 
         $noonRule = !$dayOverride ? (intval($now->format('H'))<12 ? 'yesterday' : 'today') : strtolower($dayCol);
-        $msg = "Recorded ".number_format($steps)." for $name on $noonRule.";
+        $msg = "Recorded ".number_format($steps)." for $targetUserName on $noonRule.";
 
         \App\Http\Responders\SmsResponder::ok($msg);
     }
