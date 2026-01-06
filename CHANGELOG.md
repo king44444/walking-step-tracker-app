@@ -8,6 +8,9 @@
   - Anyone can log steps for anyone else (family app, admin-only knowledge)
   - Added `target_user_name` column to `sms_audit` table for tracking
   - Updated tests to cover new parsing logic
+- Update deployment script to run Phinx migrations automatically
+  - Fixes migration file permissions before running Phinx
+  - Runs migrations as web user to avoid permission issues
 
 ## 0.1.0 - 2026-01-01
 - Update site header messaging to January Walk-a-thon rules.

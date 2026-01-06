@@ -107,7 +107,14 @@ ssh "${PI_USER}@${PI_HOST}" "bash -lc '
 
 echo "Run database migrations on server..."
 ssh "${PI_USER}@${PI_HOST}" "bash -lc '
+  # Run legacy migrate.php
   cd \"${REMOTE_ROOT}\" && php api/migrate.php >/dev/null 2>&1 || true
+
+  # Fix permissions on migration files before running Phinx
+  sudo find \"${REMOTE_ROOT}/database/migrations\" -type f -name \"*.php\" -exec chmod 644 {} \; 2>/dev/null || true
+
+  # Run Phinx migrations as web user to avoid permission issues
+  cd \"${REMOTE_ROOT}\" && sudo -u ${WEB_USER} ./vendor/bin/phinx migrate 2>&1 | grep -E \"(migrating|migrated|All Done|Error)\" || true
 '"
 
 echo "Prepare Nginx snippet for ${REMOTE_URI_PREFIX}/api/* routing (manual include required)..."
