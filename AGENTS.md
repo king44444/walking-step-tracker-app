@@ -5,8 +5,8 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 
 ## Critical Workflow Rules
 **ALWAYS deploy and commit after making code changes:**
-1. Deploy first: `./scripts/deploy_to_pi.sh`
-2. Then commit: `git add -A && git commit -m "Description" && git push`
+1. Deploy first: `./scripts/deploy_to_local.sh` (untracked; keep it untracked)
+2. Then commit + push: `git add -A && git commit --author="King <king@example.com>" -m "Description" && git push`
 3. Never skip these steps after modifying code
 
 ## Agent Workflow & Documentation Protocol
@@ -38,13 +38,17 @@ Capture repo conventions, deployment facts, and "gotchas" for future agents/huma
 ### Deploy to Server
 ```bash
 # From local machine - deploys code and restarts services
-PI_HOST=your-hostname PI_USER=deploy REMOTE_ROOT=/var/www/your-app REMOTE_URI_PREFIX=/walk ./scripts/deploy_to_pi.sh
+./scripts/deploy_to_local.sh
+
+# NOTE: deploy_to_local.sh is intentionally untracked. Do NOT add it to git.
 
 # Check deployment status
-ssh deploy@example-host "cd /var/www/your-app && curl -s api/weeks.php | jq ."
+ssh deploy@example-host "curl -s http://localhost/dev/html/walk/api/weeks.php | jq ."
 ```
 
-> ⚠️ Export `PI_HOST`, `PI_USER`, `REMOTE_ROOT`, and (if needed) `REMOTE_URI_PREFIX` before running the deploy script. Substitute your own SSH user/host in the commands below.
+> ⚠️ If you don't have `deploy_to_local.sh`, use the tracked deploy script instead:
+> `PI_HOST=your-hostname PI_USER=deploy REMOTE_ROOT=/var/www/your-app REMOTE_URI_PREFIX=/dev/html/walk ./scripts/deploy_to_pi.sh`  
+> Export `PI_HOST`, `PI_USER`, and `REMOTE_ROOT` before running it. `REMOTE_URI_PREFIX` defaults to `/dev/html/walk` if unset.
 
 ## Reminders Scheduler (Cron)
 - The reminder system is driven by `bin/run_reminders.php` and must be scheduled to run every minute.
@@ -86,12 +90,12 @@ Notes
 - `Outbound::sendSMS` requires `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` to be set in the PHP-FPM/CLI env (loaded via `.env` with `App\Core\Env::bootstrap`).
 - Reminders are sent only once per user per day (tracked by `reminders_log`). Users with `phone_opted_out=1` are skipped.
 
-### Current Status (Verified)
+### Post-Setup Checklist
 - Cron installed for user `deploy`: runs every minute.
 - DB tables present: `reminders_log`, `sms_consent_log`; users table has `phone_opted_out`.
 - Scheduler timezone: uses `WALK_TZ` via `now_in_tz()`.
 - Outbound SMS: CLI can read Twilio creds via `$_ENV` or fallback to `.env.local` parse.
-- End-to-end test (sample user) succeeded; one reminder sent and logged.
+- End-to-end test (sample user) succeeds; one reminder sent and logged.
 
 ### Troubleshooting Quick-Checks
 - If `bin/run_reminders.php` says “Failed to send reminder … Missing TWILIO_*”:
@@ -105,6 +109,7 @@ Notes
 - The app loads `.env` first, then `.env.local` (overrides). Keep server-only secrets in `.env.local` on the server.
 - Deploy script excludes `.env.local` to avoid overwriting secrets during rsync.
 - A template for production/server configuration is provided: `.env.server.example` — copy and edit on the server as `.env.local`.
+- Only the repo root `.env`/`.env.local` are read by `App\Core\Env::bootstrap`. `api/.env.local` is legacy/unused; avoid storing secrets there.
 - If you see a stray `env.local` (missing leading dot), it is unused. Rename it to `.env.local` or remove it.
 
 ## Nginx Snippet Gotcha (Important)
@@ -118,8 +123,8 @@ Notes
 - Minimal working snippet content:
   ```nginx
   # Include this inside the appropriate server { } block
-  location ^~ /walk/api/ {
-      try_files $uri /walk/public/index.php;
+  location ^~ /dev/html/walk/api/ {
+      try_files $uri /dev/html/walk/public/index.php;
       include fastcgi_params;
       fastcgi_param SCRIPT_FILENAME /var/www/your-app/public/index.php;
       fastcgi_param QUERY_STRING $query_string;
@@ -205,7 +210,7 @@ SMS_SMOKE_BASE_URL=http://localhost ./bin/smoke_sms.sh
 ## API Contracts
 - `api/weeks.php`: GET returns `{ok, weeks[]}`, POST `action=create|delete`
 - `api/data.php`: Returns week data with normalization
-- SMS endpoints (router): `/api/sms`, `/api/send-sms`, `/api/sms/status`
+- SMS endpoints (router): `/api/sms`, `/api/send-sms`, `/api/sms/status` (no legacy `.php` routes)
 - Award generation: `api/award_generate.php` (admin only)
 
 ## Database & Migrations
