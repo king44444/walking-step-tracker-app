@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.1 - 2026-01-09
+- Add admin awards settings usage audit report in docs.
+
 ## 0.2.0 - 2026-01-06
 - Add support for optional name prefix when logging steps via SMS
   - New format: `[name?] [day?] <steps>`
