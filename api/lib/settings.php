@@ -30,7 +30,7 @@ function settings_seed_defaults(PDO $pdo): void {
     'ai.recap.enabled' => '1',
     'ai.award.enabled' => '1',
     'ai.image.provider' => 'openrouter',
-    'sms.inbound_rate_window_sec' => '60',
+    'sms.inbound_rate_window_sec' => '4',
     'sms.ai_rate_window_sec' => '120',
     'sms.audit_retention_days' => '90',
     'reminders.default_morning' => '07:30',
