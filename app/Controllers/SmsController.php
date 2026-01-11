@@ -85,7 +85,6 @@ class SmsController
                     'header' => $_SERVER['HTTP_X_TWILIO_SIGNATURE'] ?? '',
                     'sig_string' => $sigString,
                     'used_token_hash' => $usedToken ? substr(hash('sha256', $usedToken), 0, 16) : null,
-                    'raw_tokens' => $authTokens,
                     'token_hashes' => $tokenHashes,
                     'token_count' => count($authTokens),
                     'host' => $_SERVER['HTTP_HOST'] ?? '',

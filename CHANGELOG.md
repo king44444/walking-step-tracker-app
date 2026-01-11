@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.3 - 2026-01-11
+- Remove raw Twilio auth tokens from sms_bad_sig.log.
+
 ## 0.2.2 - 2026-01-11
 - Add application audit report in docs.
 
