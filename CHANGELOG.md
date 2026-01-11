@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.2 - 2026-01-11
+- Add application audit report in docs.
+
 ## 0.2.1 - 2026-01-09
 - Add admin awards settings usage audit report in docs.
 
